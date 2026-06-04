@@ -143,3 +143,59 @@ class TestCollectFilePaths:
         result = collect_file_paths(tmp_path)
         assert len(result) == 1
         assert result[0].name == "code.py"
+
+
+class TestCollectFilePathsSymlinks:
+    """Symlinks must not let collection escape the project root (audit C-3)."""
+
+    def _project_with_outside_link(self, tmp_path):
+        project = tmp_path / "project"
+        outside = tmp_path / "outside"
+        project.mkdir(); outside.mkdir()
+        (project / "app.py").write_text("x = 1")
+        (outside / "secret.py").write_text("SECRET = 'leak'")
+        return project, outside
+
+    def test_symlinked_file_outside_root_skipped(self, tmp_path):
+        project, outside = self._project_with_outside_link(tmp_path)
+        (project / "link.py").symlink_to(outside / "secret.py")
+        result = collect_file_paths(project)
+        names = {p.name for p in result}
+        assert "app.py" in names
+        assert "link.py" not in names  # escaping symlink dropped
+
+    def test_symlinked_dir_outside_root_not_traversed(self, tmp_path):
+        project, outside = self._project_with_outside_link(tmp_path)
+        (project / "linkdir").symlink_to(outside, target_is_directory=True)
+        result = collect_file_paths(project)
+        reals = {p.resolve() for p in result}
+        assert (outside / "secret.py").resolve() not in reals
+
+    def test_symlink_within_root_is_kept(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "real.py").write_text("x = 1")
+        # symlink that stays inside the project root is legitimate
+        (project / "alias.py").symlink_to(project / "real.py")
+        result = collect_file_paths(project)
+        names = {p.name for p in result}
+        assert "real.py" in names
+        assert "alias.py" in names
+
+    def test_follow_symlinks_opt_in_includes_outside(self, tmp_path):
+        project, outside = self._project_with_outside_link(tmp_path)
+        (project / "link.py").symlink_to(outside / "secret.py")
+        result = collect_file_paths(project, follow_symlinks=True)
+        names = {p.name for p in result}
+        assert "link.py" in names  # explicit opt-in restores old behaviour
+
+    def test_broken_symlink_outside_root_skipped(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "real.py").write_text("x = 1")
+        # dangling symlink whose target is outside the root → must be dropped
+        (project / "dangling.py").symlink_to(tmp_path / "gone" / "missing.py")
+        result = collect_file_paths(project)
+        names = {p.name for p in result}
+        assert "real.py" in names
+        assert "dangling.py" not in names

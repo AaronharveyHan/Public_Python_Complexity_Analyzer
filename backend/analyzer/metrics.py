@@ -40,17 +40,38 @@ _DEFAULT_IGNORE: frozenset[str] = frozenset({
 })
 
 
-def collect_file_paths(project_path: Path, ignore_dirs: set[str] | None = None) -> List[Path]:
+def collect_file_paths(
+    project_path: Path,
+    ignore_dirs: set[str] | None = None,
+    *,
+    follow_symlinks: bool = False,
+) -> List[Path]:
     """Recursively collect all .py files, skipping common noise directories.
 
     *ignore_dirs* is merged with (not a replacement for) the built-in defaults.
+
+    By default, symlinks that point **outside the project root** are skipped:
+    a ``.py`` symlink (or a symlinked directory) targeting e.g. ``/etc`` or a
+    sibling of the project would otherwise be read and surfaced in the report,
+    escaping the analysed tree (and the API's ``ALLOWED_BASE_DIR`` guard).
+    Pass ``follow_symlinks=True`` to opt back into the unrestricted behaviour.
     """
     effective_ignore = _DEFAULT_IGNORE | set(ignore_dirs or [])
+    root_real = project_path.resolve()
     files: List[Path] = []
     for p in sorted(project_path.rglob("*.py")):
         if any(part in effective_ignore for part in p.parts):
             continue
         if any(part.endswith(".egg-info") for part in p.parts):
             continue
+        if not follow_symlinks:
+            # Resolve symlinks and ensure the real target stays within the
+            # project root. Confines analysis to the tree the caller asked for.
+            try:
+                real = p.resolve()
+            except (OSError, RuntimeError):
+                continue  # broken symlink or resolution loop
+            if real != root_real and not real.is_relative_to(root_real):
+                continue
         files.append(p)
     return files
