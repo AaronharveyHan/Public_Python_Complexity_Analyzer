@@ -22,6 +22,11 @@ from .risk         import compute_risk_scores
 
 
 ProgressCB = Callable[[int, str], None]
+CancelCB = Callable[[], bool]
+
+
+class AnalysisCancelled(Exception):
+    """Raised internally when a caller-supplied cancel signal fires."""
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -67,15 +72,20 @@ def analyze_project(
     project_path: str | Path,
     ignore_dirs: set[str] | None = None,
     progress_cb: ProgressCB | None = None,
+    should_cancel: CancelCB | None = None,
 ) -> dict:
     """
     Analyse a Python project and return a comprehensive result dict.
 
     Parameters
     ----------
-    project_path : path to the project root
-    ignore_dirs  : directory names to skip (adds to defaults)
-    progress_cb  : optional callback(percent: int, message: str)
+    project_path  : path to the project root
+    ignore_dirs   : directory names to skip (adds to defaults)
+    progress_cb   : optional callback(percent: int, message: str)
+    should_cancel : optional callback() -> bool. Checked at file boundaries and
+                    between phases; when it returns True the analysis aborts with
+                    AnalysisCancelled. Lets a caller (e.g. a timeout watchdog)
+                    stop a runaway job cooperatively and free the worker thread.
     """
     root = Path(project_path).resolve()
     t_start = time.time()
@@ -83,6 +93,10 @@ def analyze_project(
     def _progress(pct: int, msg: str) -> None:
         if progress_cb:
             progress_cb(pct, msg)
+
+    def _check_cancel() -> None:
+        if should_cancel and should_cancel():
+            raise AnalysisCancelled()
 
     _progress(0, "Starting analysis…")
 
@@ -105,6 +119,7 @@ def analyze_project(
     failed_files: list[dict] = []
 
     for idx, fpath in enumerate(files):
+        _check_cancel()
         pct = 10 + int(60 * idx / n_files)
         rel = str(fpath.relative_to(root))
         _progress(pct, f"Parsing {rel}")
@@ -159,6 +174,7 @@ def analyze_project(
         file_infos.append(fi)
 
     # ── 3. Duplicate detection (cross-file) ───────────────────────────────────
+    _check_cancel()
     _progress(72, "Detecting duplicate functions…")
     detect_duplicates(all_functions)
     # detect_duplicates mutates the FunctionDetail objects in place, so build
@@ -184,6 +200,7 @@ def analyze_project(
             risk_map[mid]          = r.risk_score
 
     # ── 5. Dependency graph ───────────────────────────────────────────────────
+    _check_cancel()
     _progress(85, "Building dependency graph…")
     G, cycles = build_dependency_graph(files, root, imports_map)
     dep_graph  = graph_to_json(G, cycles, risk_map)

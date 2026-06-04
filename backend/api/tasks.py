@@ -39,6 +39,10 @@ _store: Dict[str, TaskStatus] = {}
 # {task_id: [asyncio.Queue]}  – per-task WebSocket subscriber queues
 _ws_queues: Dict[str, List[asyncio.Queue]] = {}
 
+# {task_id: threading.Event}  – set to request cooperative cancellation of a
+# running analysis (e.g. by the timeout watchdog).
+_cancel_events: Dict[str, threading.Event] = {}
+
 
 # ── SQLite persistence ─────────────────────────────────────────────────────────
 
@@ -190,6 +194,12 @@ def _update(task_id: str, **kwargs: Any) -> None:
         task = _store.get(task_id)
         if task is None:
             return
+        # Terminal-state guard: once a task is completed/failed, ignore any
+        # later update. Prevents a runaway analysis that finishes *after* the
+        # timeout watchdog already marked it failed from clobbering that state
+        # (and re-persisting a "completed" row). First terminal status wins.
+        if task.status in ("completed", "failed"):
+            return
         task = TaskStatus.model_validate({**task.model_dump(), **kwargs})
         _store[task_id] = task
         terminal = task.status in ("completed", "failed")
@@ -211,6 +221,7 @@ def _update(task_id: str, **kwargs: Any) -> None:
         _db_upsert(task)
         with _lock:
             _ws_queues.pop(task_id, None)
+            _cancel_events.pop(task_id, None)
 
 
 def _push_ws(task_id: str, payload: dict) -> None:
@@ -249,8 +260,12 @@ def start_analysis(
 ) -> None:
     """Submit the analysis job to the thread pool."""
 
+    cancel_event = threading.Event()
+    with _lock:
+        _cancel_events[task_id] = cancel_event
+
     def _run() -> None:
-        from backend.analyzer.core import analyze_project
+        from backend.analyzer.core import analyze_project, AnalysisCancelled
 
         def _progress(pct: int, msg: str) -> None:
             loop.call_soon_threadsafe(
@@ -267,12 +282,18 @@ def start_analysis(
                 project_path,
                 ignore_dirs=set(ignore_dirs) if ignore_dirs else None,
                 progress_cb=_progress,
+                should_cancel=cancel_event.is_set,
             )
             loop.call_soon_threadsafe(
                 lambda r=result: _update(
                     task_id, status="completed", progress=100, message="Done", result=r
                 )
             )
+        except AnalysisCancelled:
+            # Cancellation was requested (e.g. timeout). The watchdog owns the
+            # terminal state; just stop and free the worker. The terminal-state
+            # guard in _update drops any stale write either way.
+            return
         except Exception as exc:
             import traceback
             tb = traceback.format_exc()
@@ -285,10 +306,13 @@ def start_analysis(
     future = _executor.submit(_run)
 
     def _watchdog() -> None:
-        """Mark task failed if the analysis thread exceeds ANALYSIS_TIMEOUT."""
+        """Cancel + fail the task if the analysis exceeds ANALYSIS_TIMEOUT."""
         try:
             future.result(timeout=ANALYSIS_TIMEOUT)
         except FutureTimeoutError:
+            # Signal the running analysis to stop at the next file boundary so
+            # the worker thread is released, then mark the task failed.
+            cancel_event.set()
             loop.call_soon_threadsafe(
                 lambda: _update(
                     task_id, status="failed", progress=0, message="Error",

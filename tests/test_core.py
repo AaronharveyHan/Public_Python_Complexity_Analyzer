@@ -234,3 +234,30 @@ class TestDuplicateFlagConsistency:
         flags = sorted(fn["is_duplicate"] for fn in handlers)
         # exactly one False (original) and one True (duplicate)
         assert flags == [False, True]
+
+
+class TestCancellation:
+    """Cooperative cancellation via should_cancel (audit C-4)."""
+
+    def test_cancel_raises_analysis_cancelled(self, tmp_path):
+        from backend.analyzer.core import AnalysisCancelled
+        for i in range(5):
+            _write(tmp_path / f"m{i}.py", "def f():\n    return 1\n")
+        calls = {"n": 0}
+
+        def should_cancel():
+            calls["n"] += 1
+            return calls["n"] >= 2  # trip after the first file boundary
+
+        with pytest.raises(AnalysisCancelled):
+            analyze_project(tmp_path, should_cancel=should_cancel)
+
+    def test_never_cancel_completes_normally(self, tmp_path):
+        _write(tmp_path / "m.py", "def f():\n    return 1\n")
+        result = analyze_project(tmp_path, should_cancel=lambda: False)
+        assert result["summary"]["total_files"] == 1
+
+    def test_no_cancel_callback_is_backward_compatible(self, tmp_path):
+        _write(tmp_path / "m.py", "def f():\n    return 1\n")
+        result = analyze_project(tmp_path)  # should_cancel omitted
+        assert result["summary"]["total_files"] == 1

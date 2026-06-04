@@ -210,3 +210,86 @@ class TestAuth:
         # default client has _API_TOKEN == "" → auth is a no-op
         resp = client.post("/analyze", json={"project_path": str(project_dir)})
         assert resp.status_code == 202
+
+
+# ── Timeout / terminal-state guard (audit C-4) ────────────────────────────────
+
+class TestTerminalStateGuard:
+    """Once a task is terminal, late updates must not clobber it."""
+
+    def _seed(self, task_id, status="processing"):
+        from backend.api.models import TaskStatus
+        with tasks_mod._lock:
+            tasks_mod._store[task_id] = TaskStatus(
+                task_id=task_id, status=status, progress=10, message="working"
+            )
+
+    def test_late_completion_does_not_overwrite_timeout_failure(self):
+        tid = "guard-1"
+        self._seed(tid)
+        # watchdog marks it failed (timeout)
+        tasks_mod._update(tid, status="failed", progress=0,
+                          message="Error", error="TimeoutError: ...")
+        assert tasks_mod._store[tid].status == "failed"
+        # runaway analysis finishes late and tries to mark completed
+        tasks_mod._update(tid, status="completed", progress=100,
+                          message="Done", result={"summary": {}})
+        assert tasks_mod._store[tid].status == "failed"      # not clobbered
+        assert tasks_mod._store[tid].result is None
+
+    def test_completed_not_flipped_to_failed(self):
+        tid = "guard-2"
+        self._seed(tid)
+        tasks_mod._update(tid, status="completed", progress=100,
+                          message="Done", result={"summary": {}})
+        assert tasks_mod._store[tid].status == "completed"
+        tasks_mod._update(tid, status="failed", progress=0, message="late error")
+        assert tasks_mod._store[tid].status == "completed"   # first terminal wins
+
+    def test_progress_update_before_terminal_still_applies(self):
+        tid = "guard-3"
+        self._seed(tid)
+        tasks_mod._update(tid, progress=50, message="half", status="processing")
+        assert tasks_mod._store[tid].progress == 50
+        assert tasks_mod._store[tid].status == "processing"
+
+
+class TestTimeoutCancellation:
+    """A timed-out analysis is cancelled and reported as failed (not completed)."""
+
+    def test_timeout_cancels_and_marks_failed(self, client, project_dir, monkeypatch):
+        import threading
+        # Force an immediate timeout so the watchdog fires right away.
+        monkeypatch.setattr(tasks_mod, "ANALYSIS_TIMEOUT", 0)
+
+        started = threading.Event()
+        release = threading.Event()
+
+        import backend.analyzer.core as core_mod
+
+        def slow_analyze(*args, should_cancel=None, **kwargs):
+            started.set()
+            # simulate a long analysis that honours cooperative cancellation
+            for _ in range(200):
+                if should_cancel and should_cancel():
+                    raise core_mod.AnalysisCancelled()
+                release.wait(timeout=0.05)
+            return {"summary": {}}
+
+        monkeypatch.setattr(core_mod, "analyze_project", slow_analyze)
+
+        resp = client.post("/analyze", json={"project_path": str(project_dir)})
+        task_id = resp.json()["task_id"]
+        assert started.wait(timeout=5)
+
+        # Poll until the watchdog has marked it failed.
+        import time as _t
+        deadline = _t.time() + 5
+        status = None
+        while _t.time() < deadline:
+            status = client.get(f"/result/{task_id}").json()["status"]
+            if status == "failed":
+                break
+            _t.sleep(0.05)
+        assert status == "failed"
+        assert "Timeout" in (client.get(f"/result/{task_id}").json().get("error") or "")
