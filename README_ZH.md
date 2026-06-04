@@ -186,6 +186,7 @@ npm run preview  # 本地测试生产构建（包含代理）
 | `ALLOWED_BASE_DIR` | 当前工作目录 | 服务器允许分析的最高目录。默认为启动目录，**而非整个用户主目录**。 |
 | `ALLOWED_ORIGINS` | localhost:5173/4173/3000 | 逗号分隔的 CORS 源列表 |
 | `ANALYZE_RATE_LIMIT` | `10` | 每 IP 每 60 秒最大 `/analyze` 请求数 |
+| `RATE_LIMIT_MAX_CLIENTS` | `10000` | 追踪的客户端 IP 上限(防内存耗尽);过期 IP 还会被周期性清扫 |
 | `ANALYSIS_TIMEOUT` | `300` | 分析任务超时时间（秒），超时自动终止 |
 | `ANALYSIS_MAX_WORKERS` | CPU 核心数 | ThreadPoolExecutor 工作线程数 |
 | `LONG_FUNC_THRESHOLD` | `50` | 判定为"长函数"的行数阈值 |

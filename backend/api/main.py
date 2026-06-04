@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -85,24 +86,62 @@ app.add_middleware(
 # ── Rate limiter (sliding window, no external deps) ──────────────────────────
 _RL_WINDOW:  int = 60   # seconds
 _RL_MAX:     int = int(os.environ.get("ANALYZE_RATE_LIMIT", "10"))  # per window per IP
+# Hard cap on tracked client IPs so a flood of distinct/spoofed source IPs can't
+# grow the store without bound (memory-exhaustion guard).
+_RL_MAX_CLIENTS: int = int(os.environ.get("RATE_LIMIT_MAX_CLIENTS", "10000"))
 _rl_store:   Dict[str, Deque[float]] = {}
+_rl_lock:    threading.Lock = threading.Lock()
+_rl_last_sweep: float = 0.0
+
+
+def _rl_sweep(now: float) -> None:
+    """Drop IPs whose whole window has expired. Caller must hold _rl_lock."""
+    cutoff = now - _RL_WINDOW
+    stale = []
+    for ip, dq in _rl_store.items():
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if not dq:
+            stale.append(ip)
+    for ip in stale:
+        del _rl_store[ip]
 
 
 def _rate_limit_check(client_ip: str) -> None:
-    """Raise 429 if the client has exceeded the request quota."""
+    """Raise 429 if the client has exceeded the request quota.
+
+    The store self-cleans: IPs whose window has fully expired are evicted on a
+    periodic sweep (and whenever the hard client cap is hit), so silent clients
+    no longer leak entries forever.
+    """
     now = time.monotonic()
-    if client_ip not in _rl_store:
-        _rl_store[client_ip] = deque()
-    dq = _rl_store[client_ip]
-    while dq and dq[0] < now - _RL_WINDOW:
-        dq.popleft()
-    if len(dq) >= _RL_MAX:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many requests — max {_RL_MAX} analyses per {_RL_WINDOW}s. "
-                   "Override with ANALYZE_RATE_LIMIT env var.",
-        )
-    dq.append(now)
+    global _rl_last_sweep
+    with _rl_lock:
+        # Time-based sweep, at most once per window.
+        if now - _rl_last_sweep > _RL_WINDOW:
+            _rl_sweep(now)
+            _rl_last_sweep = now
+
+        dq = _rl_store.get(client_ip)
+        if dq is None:
+            # New IP: enforce the hard cap before inserting. A forced sweep
+            # reclaims any stale entries first; only genuinely-active IPs remain.
+            if len(_rl_store) >= _RL_MAX_CLIENTS:
+                _rl_sweep(now)
+                _rl_last_sweep = now
+            dq = deque()
+            _rl_store[client_ip] = dq
+
+        cutoff = now - _RL_WINDOW
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= _RL_MAX:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many requests — max {_RL_MAX} analyses per {_RL_WINDOW}s. "
+                       "Override with ANALYZE_RATE_LIMIT env var.",
+            )
+        dq.append(now)
 
 
 # ── Authentication (opt-in bearer token) ─────────────────────────────────────

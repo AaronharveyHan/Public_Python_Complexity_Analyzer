@@ -184,6 +184,7 @@ All thresholds and limits are configurable via environment variables:
 | `ALLOWED_BASE_DIR` | current working dir | Root directory the server is allowed to analyse. Defaults to the launch directory, **not** the whole home dir. |
 | `ALLOWED_ORIGINS` | localhost:5173/4173/3000 | Comma-separated CORS origins |
 | `ANALYZE_RATE_LIMIT` | `10` | Max `/analyze` requests per IP per 60 s |
+| `RATE_LIMIT_MAX_CLIENTS` | `10000` | Hard cap on tracked client IPs (memory-exhaustion guard); stale IPs are also swept periodically |
 | `ANALYSIS_TIMEOUT` | `300` | Seconds before an analysis job is force-failed |
 | `ANALYSIS_MAX_WORKERS` | CPU count | ThreadPoolExecutor worker threads |
 | `LONG_FUNC_THRESHOLD` | `50` | Lines-of-code threshold for "long function" flag |

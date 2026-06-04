@@ -17,11 +17,13 @@ def reset_task_store():
     tasks_mod._ws_queues.clear()
     tasks_mod._reset_db()
     main_mod._rl_store.clear()
+    main_mod._rl_last_sweep = 0.0
     yield
     tasks_mod._store.clear()
     tasks_mod._ws_queues.clear()
     tasks_mod._reset_db()
     main_mod._rl_store.clear()
+    main_mod._rl_last_sweep = 0.0
 
 
 @pytest.fixture
@@ -293,3 +295,62 @@ class TestTimeoutCancellation:
             _t.sleep(0.05)
         assert status == "failed"
         assert "Timeout" in (client.get(f"/result/{task_id}").json().get("error") or "")
+
+
+# ── Rate limiter eviction / bounding (audit H-3) ──────────────────────────────
+
+class TestRateLimiter:
+    from collections import deque as _deque
+
+    def test_returns_429_after_max(self, monkeypatch):
+        monkeypatch.setattr(main_mod, "_RL_MAX", 3)
+        for _ in range(3):
+            main_mod._rate_limit_check("1.2.3.4")  # 3 allowed
+        with pytest.raises(Exception) as exc:
+            main_mod._rate_limit_check("1.2.3.4")  # 4th rejected
+        assert getattr(exc.value, "status_code", None) == 429
+
+    def test_distinct_ips_tracked_separately(self, monkeypatch):
+        monkeypatch.setattr(main_mod, "_RL_MAX", 1)
+        main_mod._rate_limit_check("a")
+        main_mod._rate_limit_check("b")  # different IP, own quota — no raise
+        assert set(main_mod._rl_store) >= {"a", "b"}
+
+    def test_sweep_evicts_fully_expired_ip(self):
+        from collections import deque
+        old = 100.0
+        main_mod._rl_store["stale"] = deque([old])
+        # sweep at a time past the window — the IP's only entry has expired
+        main_mod._rl_sweep(old + main_mod._RL_WINDOW + 1)
+        assert "stale" not in main_mod._rl_store
+
+    def test_sweep_keeps_active_ip(self):
+        from collections import deque
+        now = 1000.0
+        main_mod._rl_store["active"] = deque([now])
+        main_mod._rl_sweep(now + 1)  # entry still within window
+        assert "active" in main_mod._rl_store
+
+    def test_silent_client_evicted_on_next_periodic_sweep(self, monkeypatch):
+        """A client that stops sending requests must not linger forever."""
+        from collections import deque
+        # Seed a stale IP with an old timestamp and force the periodic sweep path.
+        main_mod._rl_store["ghost"] = deque([0.0])
+        main_mod._rl_last_sweep = 0.0  # ensure now - last_sweep > window triggers sweep
+        # A fresh request from a different IP triggers the time-based sweep.
+        main_mod._rate_limit_check("fresh")
+        assert "ghost" not in main_mod._rl_store
+        assert "fresh" in main_mod._rl_store
+
+    def test_hard_cap_forces_sweep_for_new_ip(self, monkeypatch):
+        from collections import deque
+        monkeypatch.setattr(main_mod, "_RL_MAX_CLIENTS", 2)
+        # Fill the store to the cap with stale entries, and disable the
+        # time-based sweep so only the cap path can clean up.
+        main_mod._rl_store.clear()
+        main_mod._rl_store["s1"] = deque([0.0])
+        main_mod._rl_store["s2"] = deque([0.0])
+        main_mod._rl_last_sweep = main_mod.time.monotonic()  # skip periodic sweep
+        main_mod._rate_limit_check("newcomer")  # hits cap → forced sweep clears stale
+        assert "newcomer" in main_mod._rl_store
+        assert len(main_mod._rl_store) <= main_mod._RL_MAX_CLIENTS
