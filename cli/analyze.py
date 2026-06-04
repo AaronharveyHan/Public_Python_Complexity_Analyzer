@@ -93,15 +93,31 @@ def _run_local(project_path: str, output: str | None, as_json: bool,
         print(f"  HTML report saved to: {html_output}")
 
 
+def _auth_headers(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Add a bearer token header when API_TOKEN is set, for the CLI's own calls."""
+    headers = dict(base or {})
+    token = os.environ.get("API_TOKEN", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def _run_web(project_path: str, port: int, ignore_dirs: list[str] | None) -> None:
     """Start the FastAPI server and open the browser."""
     import uvicorn, threading, asyncio
 
-    print(f"  Starting API server on http://localhost:{port} …")
+    # Bind to loopback by default so the API (which can read files and is
+    # unauthenticated unless API_TOKEN is set) is not exposed to the network.
+    # Override with API_HOST=0.0.0.0 only when you understand the exposure.
+    host = os.environ.get("API_HOST", "127.0.0.1")
+    print(f"  Starting API server on http://{host}:{port} …")
+    if host not in ("127.0.0.1", "localhost"):
+        print(f"  WARNING: binding to {host} exposes the API to the network. "
+              f"Set API_TOKEN to require authentication.", file=sys.stderr)
 
     server_thread = threading.Thread(
         target=uvicorn.run,
-        kwargs={"app": "backend.api.main:app", "host": "0.0.0.0", "port": port,
+        kwargs={"app": "backend.api.main:app", "host": host, "port": port,
                 "log_level": "warning"},
         daemon=True,
     )
@@ -130,7 +146,7 @@ def _run_web(project_path: str, port: int, ignore_dirs: list[str] | None) -> Non
     req = urlreq.Request(
         f"http://localhost:{port}/analyze",
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers=_auth_headers({"Content-Type": "application/json"}),
         method="POST",
     )
     try:

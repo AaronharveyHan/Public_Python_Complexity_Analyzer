@@ -17,7 +17,9 @@ from collections import deque
 from pathlib import Path
 from typing import Deque, Dict
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
@@ -34,9 +36,11 @@ from backend.api.tasks  import (
 
 # ── Path traversal guard ──────────────────────────────────────────────────────
 # Only paths under this directory may be analysed.
-# Override via the ALLOWED_BASE_DIR environment variable.
+# Default is the current working directory (the project you launched from),
+# NOT the whole home directory — this keeps the analysable scope narrow.
+# Override via the ALLOWED_BASE_DIR environment variable to widen it.
 _ALLOWED_BASE: Path = Path(
-    os.environ.get("ALLOWED_BASE_DIR", Path.home())
+    os.environ.get("ALLOWED_BASE_DIR", os.getcwd())
 ).resolve()
 
 
@@ -101,6 +105,35 @@ def _rate_limit_check(client_ip: str) -> None:
     dq.append(now)
 
 
+# ── Authentication (opt-in bearer token) ─────────────────────────────────────
+# Set the API_TOKEN environment variable to require an
+#   Authorization: Bearer <token>
+# header on every data endpoint.  When API_TOKEN is unset, auth is disabled
+# (convenient for purely local use); set it whenever the server is reachable
+# from the network.
+_API_TOKEN: str = os.environ.get("API_TOKEN", "")
+
+
+def _token_matches(token: str) -> bool:
+    # constant-time compare to avoid leaking the token via timing
+    import hmac
+    return hmac.compare_digest(token, _API_TOKEN)
+
+
+def require_auth(request: Request) -> None:
+    """Reject requests lacking a valid bearer token (no-op when API_TOKEN unset)."""
+    if not _API_TOKEN:
+        return
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not _token_matches(token):
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: provide 'Authorization: Bearer <API_TOKEN>'.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 # ── REST endpoints ────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -115,7 +148,8 @@ async def health() -> dict:
     }
 
 
-@app.post("/analyze", response_model=TaskStatus, status_code=202)
+@app.post("/analyze", response_model=TaskStatus, status_code=202,
+          dependencies=[Depends(require_auth)])
 async def analyze(req: AnalyzeRequest, request: Request) -> TaskStatus:
     """Submit a project path for analysis.  Returns task_id immediately."""
     _rate_limit_check(request.client.host if request.client else "unknown")
@@ -133,7 +167,8 @@ async def analyze(req: AnalyzeRequest, request: Request) -> TaskStatus:
     return task
 
 
-@app.get("/result/{task_id}", response_model=TaskStatus)
+@app.get("/result/{task_id}", response_model=TaskStatus,
+         dependencies=[Depends(require_auth)])
 async def get_result(task_id: str) -> TaskStatus:
     task = get_task(task_id)
     if task is None:
@@ -141,12 +176,14 @@ async def get_result(task_id: str) -> TaskStatus:
     return task
 
 
-@app.get("/tasks", response_model=list[TaskStatus])
+@app.get("/tasks", response_model=list[TaskStatus],
+         dependencies=[Depends(require_auth)])
 async def get_tasks() -> list[TaskStatus]:
     return list_tasks()
 
 
-@app.get("/report/{task_id}", response_class=HTMLResponse)
+@app.get("/report/{task_id}", response_class=HTMLResponse,
+         dependencies=[Depends(require_auth)])
 async def get_report(task_id: str) -> HTMLResponse:
     """Download a self-contained HTML report for a completed analysis task."""
     task = get_task(task_id)
@@ -177,6 +214,11 @@ async def get_report(task_id: str) -> HTMLResponse:
 @app.websocket("/ws/{task_id}")
 async def ws_progress(websocket: WebSocket, task_id: str) -> None:
     """Subscribe to real-time progress for a task."""
+    # Browsers cannot set Authorization headers on a WebSocket handshake, so
+    # accept the token via a query parameter:  /ws/{id}?token=<API_TOKEN>
+    if _API_TOKEN and not _token_matches(websocket.query_params.get("token", "")):
+        await websocket.close(code=1008)  # policy violation
+        return
     await websocket.accept()
 
     task = get_task(task_id)

@@ -179,7 +179,9 @@ All thresholds and limits are configurable via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ALLOWED_BASE_DIR` | `~` (home dir) | Root directory the server is allowed to analyse |
+| `API_HOST` | `127.0.0.1` | Interface the dev server binds to. Use `0.0.0.0` only when you need network exposure (set `API_TOKEN` too). |
+| `API_TOKEN` | _(unset)_ | When set, every data endpoint requires `Authorization: Bearer <token>` (WebSocket: `?token=<token>`). Unset = no auth (local use). |
+| `ALLOWED_BASE_DIR` | current working dir | Root directory the server is allowed to analyse. Defaults to the launch directory, **not** the whole home dir. |
 | `ALLOWED_ORIGINS` | localhost:5173/4173/3000 | Comma-separated CORS origins |
 | `ANALYZE_RATE_LIMIT` | `10` | Max `/analyze` requests per IP per 60 s |
 | `ANALYSIS_TIMEOUT` | `300` | Seconds before an analysis job is force-failed |

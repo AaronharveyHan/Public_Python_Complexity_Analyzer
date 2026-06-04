@@ -181,7 +181,9 @@ npm run preview  # 本地测试生产构建（包含代理）
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `ALLOWED_BASE_DIR` | `~`（用户主目录） | 服务器允许分析的最高目录 |
+| `API_HOST` | `127.0.0.1` | 开发服务器绑定的网卡。仅在需要对外暴露时才设为 `0.0.0.0`（并请同时设置 `API_TOKEN`）。 |
+| `API_TOKEN` | _(未设置)_ | 设置后所有数据接口都要求 `Authorization: Bearer <token>`（WebSocket 用 `?token=<token>`）。未设置即不鉴权（本机使用）。 |
+| `ALLOWED_BASE_DIR` | 当前工作目录 | 服务器允许分析的最高目录。默认为启动目录，**而非整个用户主目录**。 |
 | `ALLOWED_ORIGINS` | localhost:5173/4173/3000 | 逗号分隔的 CORS 源列表 |
 | `ANALYZE_RATE_LIMIT` | `10` | 每 IP 每 60 秒最大 `/analyze` 请求数 |
 | `ANALYSIS_TIMEOUT` | `300` | 分析任务超时时间（秒），超时自动终止 |

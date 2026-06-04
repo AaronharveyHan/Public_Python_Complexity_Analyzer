@@ -164,3 +164,49 @@ class TestTasksEndpoint:
         client.post("/analyze", json={"project_path": str(project_dir)})
         for task in client.get("/tasks").json():
             assert "task_id" in task
+
+
+# ── Authentication (opt-in bearer token) ──────────────────────────────────────
+
+class TestAuth:
+    @pytest.fixture
+    def auth_client(self, tmp_path, monkeypatch):
+        """TestClient with API_TOKEN enforcement enabled."""
+        monkeypatch.setattr(main_mod, "_ALLOWED_BASE", tmp_path.resolve())
+        monkeypatch.setattr(main_mod, "_API_TOKEN", "s3cret")
+        return TestClient(app)
+
+    def test_no_token_rejected_401(self, auth_client, project_dir, no_start):
+        resp = auth_client.post("/analyze", json={"project_path": str(project_dir)})
+        assert resp.status_code == 401
+
+    def test_wrong_token_rejected_401(self, auth_client, project_dir, no_start):
+        resp = auth_client.post(
+            "/analyze",
+            json={"project_path": str(project_dir)},
+            headers={"Authorization": "Bearer wrong"},
+        )
+        assert resp.status_code == 401
+
+    def test_valid_token_accepted(self, auth_client, project_dir, no_start):
+        resp = auth_client.post(
+            "/analyze",
+            json={"project_path": str(project_dir)},
+            headers={"Authorization": "Bearer s3cret"},
+        )
+        assert resp.status_code == 202
+
+    def test_tasks_requires_token(self, auth_client):
+        assert auth_client.get("/tasks").status_code == 401
+        assert auth_client.get(
+            "/tasks", headers={"Authorization": "Bearer s3cret"}
+        ).status_code == 200
+
+    def test_health_is_public(self, auth_client):
+        # health stays unauthenticated even when a token is configured
+        assert auth_client.get("/health").status_code == 200
+
+    def test_disabled_when_token_unset(self, client, project_dir, no_start):
+        # default client has _API_TOKEN == "" → auth is a no-op
+        resp = client.post("/analyze", json={"project_path": str(project_dir)})
+        assert resp.status_code == 202
