@@ -90,8 +90,11 @@ Python_Complexity_Analyzer/
 git clone https://github.com/aaronharveyhan/python_complexity_analyzer.git
 cd Python_Complexity_Analyzer
 
-# 安装后端依赖
-pip install "fastapi>=0.100" "pydantic>=2.0" uvicorn networkx httpx
+# 安装后端（运行时）依赖
+pip install -r requirements.txt
+
+# （可选）安装开发 / 测试依赖
+pip install -r requirements-dev.txt
 
 # 安装前端依赖
 cd frontend && npm install && cd ..

@@ -86,8 +86,11 @@ Python_Complexity_Analyzer/
 git clone https://github.com/aaronharveyhan/python_complexity_analyzer.git
 cd Python_Complexity_Analyzer
 
-# Install backend dependencies
-pip install "fastapi>=0.100" "pydantic>=2.0" uvicorn networkx httpx
+# Install backend (runtime) dependencies
+pip install -r requirements.txt
+
+# (Optional) install dev/test dependencies
+pip install -r requirements-dev.txt
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..

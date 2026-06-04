@@ -1,0 +1,8 @@
+# Runtime dependencies for the Python Complexity Analyzer backend + CLI.
+# Install with:  pip install -r requirements.txt
+#
+# Test/dev-only dependencies (pytest, httpx, ...) live in requirements-dev.txt.
+fastapi>=0.100
+uvicorn>=0.20
+pydantic>=2.0
+networkx>=3.0
