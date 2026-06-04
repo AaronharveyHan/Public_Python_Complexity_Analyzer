@@ -21,6 +21,14 @@ export default {
     noData:          "分析已完成但未返回数据，请重试。",
   },
 
+  error: {
+    title:       "出错了",
+    message:     "此视图在渲染时崩溃。应用的其余部分仍可使用——请重试，或重新加载页面。",
+    detailLabel: "错误详情",
+    retry:       "重试",
+    reload:      "重新加载页面",
+  },
+
   layout: {
     brand:     "🔬 复杂度",
     analyzer:  "分析器",

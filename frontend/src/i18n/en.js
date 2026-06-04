@@ -21,6 +21,14 @@ export default {
     noData:          "Analysis completed but returned no data. Please try again.",
   },
 
+  error: {
+    title:       "Something went wrong",
+    message:     "This view crashed while rendering. The rest of the app is still usable — try again, or reload the page.",
+    detailLabel: "Error detail",
+    retry:       "Try Again",
+    reload:      "Reload Page",
+  },
+
   layout: {
     brand:     "🔬 Complexity",
     analyzer:  "Analyzer",

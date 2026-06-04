@@ -1,6 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { api } from "./api/client";
 import { useTranslation } from "./i18n";
 
@@ -262,6 +263,7 @@ export default function App() {
   const [result,     setResult]     = useState(null);
   const [serverPath, setServerPath] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     api.health()
@@ -326,14 +328,29 @@ export default function App() {
         </button>
       </div>
 
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route path="/"        element={<Dashboard      result={result} />} />
-          <Route path="/deps"    element={<DependencyGraph result={result} />} />
-          <Route path="/modules" element={<ModuleAnalysis  result={result} />} />
-          <Route path="/risks"   element={<RiskList        result={result} />} />
-        </Routes>
-      </Suspense>
+      {/* Per-page boundary: a crash in one view (e.g. an ECharts render on
+          malformed data) shows a recoverable fallback while the Layout shell
+          and navigation stay intact. Keyed by path so navigating to another
+          route automatically clears a previous page's error. */}
+      <ErrorBoundary
+        key={location.pathname}
+        labels={{
+          title:       t("error.title"),
+          message:     t("error.message"),
+          detailLabel: t("error.detailLabel"),
+          retry:       t("error.retry"),
+          reload:      t("error.reload"),
+        }}
+      >
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/"        element={<Dashboard      result={result} />} />
+            <Route path="/deps"    element={<DependencyGraph result={result} />} />
+            <Route path="/modules" element={<ModuleAnalysis  result={result} />} />
+            <Route path="/risks"   element={<RiskList        result={result} />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </Layout>
   );
 }
