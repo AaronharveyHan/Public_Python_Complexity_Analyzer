@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Complexity Analyzer — 项目分析报告</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-light: #eff6ff;
+    --secondary: #7c3aed;
+    --success: #16a34a;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+    --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font);
+    color: var(--gray-800);
+    background: var(--gray-50);
+    line-height: 1.6;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--gray-900);
+    color: #fff;
+    padding: 0 2rem;
+    display: flex; align-items: center; gap: 1.5rem;
+    height: 56px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+  nav .logo { font-weight: 700; font-size: 1.1rem; color: #60a5fa; flex-shrink: 0; }
+  nav a {
+    color: #d1d5db; text-decoration: none; font-size: .875rem;
+    padding: .25rem .5rem; border-radius: 4px; transition: color .15s;
+  }
+  nav a:hover { color: #fff; background: rgba(255,255,255,.08); }
+  nav .spacer { flex: 1; }
+  nav .badge {
+    background: var(--primary); color: #fff;
+    font-size: .75rem; font-weight: 600;
+    padding: 2px 10px; border-radius: 20px;
+  }
+
+  /* ── LAYOUT ── */
+  main { max-width: 1200px; margin: 0 auto; padding: 2.5rem 2rem 4rem; }
+  section { margin-bottom: 3rem; }
+  h1 { font-size: 2rem; font-weight: 800; color: var(--gray-900); }
+  h2 {
+    font-size: 1.35rem; font-weight: 700; color: var(--gray-800);
+    border-left: 4px solid var(--primary);
+    padding-left: .75rem; margin-bottom: 1.25rem;
+  }
+  h3 { font-size: 1.05rem; font-weight: 600; color: var(--gray-700); margin-bottom: .75rem; }
+  p { color: var(--gray-600); margin-bottom: .75rem; }
+
+  /* ── HERO ── */
+  .hero {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 50%, #7c3aed 100%);
+    border-radius: 16px;
+    color: #fff;
+    padding: 2.5rem 2.5rem 2rem;
+    margin-bottom: 3rem;
+    position: relative; overflow: hidden;
+  }
+  .hero::after {
+    content: '';
+    position: absolute; right: -60px; top: -60px;
+    width: 240px; height: 240px;
+    background: rgba(255,255,255,.05);
+    border-radius: 50%;
+  }
+  .hero h1 { color: #fff; margin-bottom: .5rem; }
+  .hero .sub { color: #bfdbfe; font-size: 1rem; margin-bottom: 1.5rem; }
+  .hero .meta-row { display: flex; flex-wrap: wrap; gap: .75rem; }
+  .hero .chip {
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 20px;
+    padding: 3px 14px; font-size: .8rem; color: #e0f2fe;
+  }
+
+  /* ── KPI CARDS ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 1rem; }
+  .kpi-card {
+    background: #fff; border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.25rem 1.5rem;
+    border-top: 3px solid var(--primary);
+  }
+  .kpi-card.green { border-top-color: var(--success); }
+  .kpi-card.orange { border-top-color: var(--warning); }
+  .kpi-card.purple { border-top-color: var(--secondary); }
+  .kpi-card.red { border-top-color: var(--danger); }
+  .kpi-card .val { font-size: 2rem; font-weight: 800; color: var(--gray-900); line-height: 1; }
+  .kpi-card .label { font-size: .8rem; color: var(--gray-600); margin-top: .3rem; }
+
+  /* ── CARDS ── */
+  .card {
+    background: #fff; border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 720px) { .card-grid { grid-template-columns: 1fr; } }
+
+  /* ── TABLE ── */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  th {
+    text-align: left; padding: .65rem 1rem;
+    background: var(--gray-100); color: var(--gray-700);
+    font-weight: 600; border-bottom: 2px solid var(--gray-200);
+  }
+  td { padding: .6rem 1rem; border-bottom: 1px solid var(--gray-100); color: var(--gray-700); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--gray-50); }
+
+  /* ── CODE / MONO ── */
+  code {
+    font-family: var(--mono); font-size: .82em;
+    background: var(--gray-100); border-radius: 4px;
+    padding: 1px 6px; color: var(--secondary);
+  }
+  pre {
+    font-family: var(--mono); font-size: .82rem;
+    background: var(--gray-900); color: #e2e8f0;
+    border-radius: var(--radius); padding: 1.25rem;
+    overflow-x: auto; line-height: 1.7;
+  }
+  pre .kw { color: #93c5fd; }
+  pre .str { color: #86efac; }
+  pre .cm { color: #6b7280; font-style: italic; }
+  pre .num { color: #fcd34d; }
+
+  /* ── TAGS ── */
+  .tag {
+    display: inline-block;
+    padding: 2px 10px; border-radius: 20px; font-size: .75rem; font-weight: 600;
+  }
+  .tag-blue { background: #dbeafe; color: #1d4ed8; }
+  .tag-green { background: #dcfce7; color: #15803d; }
+  .tag-orange { background: #fef3c7; color: #b45309; }
+  .tag-red { background: #fee2e2; color: #b91c1c; }
+  .tag-purple { background: #ede9fe; color: #6d28d9; }
+  .tag-gray { background: var(--gray-100); color: var(--gray-600); }
+
+  /* ── RISK GRADE ── */
+  .grade {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 6px;
+    font-weight: 800; font-size: 1rem;
+  }
+  .grade-A { background: #dcfce7; color: #15803d; }
+  .grade-B { background: #dbeafe; color: #1d4ed8; }
+  .grade-C { background: #fef3c7; color: #b45309; }
+  .grade-D { background: #fed7aa; color: #c2410c; }
+  .grade-F { background: #fee2e2; color: #b91c1c; }
+
+  /* ── PROGRESS BAR ── */
+  .progress-bar {
+    height: 8px; background: var(--gray-200);
+    border-radius: 4px; overflow: hidden; margin-top: .25rem;
+  }
+  .progress-bar .fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+  }
+
+  /* ── TREE ── */
+  .tree { font-family: var(--mono); font-size: .82rem; line-height: 1.9; }
+  .tree .dir { color: #60a5fa; font-weight: 600; }
+  .tree .file { color: #d1d5db; }
+  .tree .cm { color: #6b7280; }
+
+  /* ── FORMULA ── */
+  .formula {
+    background: var(--primary-light); border: 1px solid #bfdbfe;
+    border-radius: var(--radius); padding: 1rem 1.25rem;
+    font-family: var(--mono); font-size: .875rem;
+    color: var(--gray-800); line-height: 1.9;
+  }
+
+  /* ── DIVIDER ── */
+  hr { border: none; border-top: 1px solid var(--gray-200); margin: 2rem 0; }
+
+  /* ── TOC ── */
+  .toc {
+    background: #fff; border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .toc ul { list-style: none; display: flex; flex-wrap: wrap; gap: .5rem .75rem; }
+  .toc a {
+    color: var(--primary); text-decoration: none; font-size: .875rem;
+    padding: 3px 12px; border-radius: 20px; background: var(--primary-light);
+    transition: background .15s;
+  }
+  .toc a:hover { background: #dbeafe; }
+
+  /* ── MODULE ROW ── */
+  .module-row { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
+  .module-icon {
+    flex-shrink: 0; width: 40px; height: 40px; border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; background: var(--primary-light);
+  }
+  .module-row .name { font-weight: 600; font-size: .95rem; color: var(--gray-900); }
+  .module-row .desc { font-size: .85rem; color: var(--gray-600); margin-top: .2rem; }
+
+  /* ── ENDPOINT ── */
+  .endpoint {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .7rem 1rem; border-radius: 6px; background: var(--gray-50);
+    margin-bottom: .5rem; border: 1px solid var(--gray-200);
+  }
+  .method {
+    font-family: var(--mono); font-size: .75rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 4px; flex-shrink: 0;
+  }
+  .method.GET { background: #dcfce7; color: #15803d; }
+  .method.POST { background: #fef3c7; color: #b45309; }
+  .method.WS { background: #ede9fe; color: #6d28d9; }
+  .ep-path { font-family: var(--mono); font-size: .85rem; color: var(--gray-800); }
+  .ep-desc { font-size: .83rem; color: var(--gray-600); margin-left: auto; }
+
+  /* ── TEST ── */
+  .test-row { display: flex; align-items: center; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid var(--gray-100); }
+  .test-row:last-child { border-bottom: none; }
+  .test-name { font-family: var(--mono); font-size: .85rem; color: var(--gray-800); flex: 1; }
+  .test-count { font-weight: 700; color: var(--primary); font-size: 1rem; width: 40px; text-align: right; }
+  .test-bar { flex: 2; }
+
+  /* ── ENV TABLE ── */
+  .env-key { font-family: var(--mono); font-size: .82rem; color: var(--secondary); }
+
+  /* ── TIMELINE ── */
+  .timeline { list-style: none; padding-left: 1.5rem; border-left: 2px solid var(--gray-200); }
+  .timeline li { position: relative; padding: .4rem 0 .4rem 1.5rem; color: var(--gray-600); font-size: .875rem; }
+  .timeline li::before {
+    content: ''; position: absolute; left: -7px; top: 50%;
+    transform: translateY(-50%);
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--primary); border: 2px solid #fff;
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  .timeline .hash { font-family: var(--mono); font-size: .8rem; color: var(--gray-500); margin-right: .5rem; }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center; padding: 2rem; font-size: .82rem;
+    color: var(--gray-600); border-top: 1px solid var(--gray-200);
+    margin-top: 3rem;
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">🐍 Python Complexity Analyzer</div>
+  <a href="#overview">概述</a>
+  <a href="#architecture">架构</a>
+  <a href="#backend">后端</a>
+  <a href="#frontend">前端</a>
+  <a href="#api">API</a>
+  <a href="#testing">测试</a>
+  <a href="#config">配置</a>
+  <a href="#features">特性</a>
+  <div class="spacer"></div>
+  <span class="badge">MIT License</span>
+</nav>
+
+<main>
+
+  <!-- HERO -->
+  <div class="hero">
+    <h1>Python Complexity Analyzer</h1>
+    <p class="sub">SonarQube 风格的 Python 代码质量与复杂度分析平台 — 项目完整分析报告</p>
+    <div class="meta-row">
+      <span class="chip">Python 3.10+</span>
+      <span class="chip">FastAPI + React</span>
+      <span class="chip">219 Tests</span>
+      <span class="chip">≥70% Coverage</span>
+      <span class="chip">GitHub Actions CI</span>
+      <span class="chip">WebSocket 实时进度</span>
+      <span class="chip">中英双语 UI</span>
+    </div>
+  </div>
+
+  <!-- TOC -->
+  <div class="toc">
+    <h3 style="margin-bottom:.75rem">目录</h3>
+    <ul>
+      <li><a href="#overview">项目概述</a></li>
+      <li><a href="#kpis">关键指标</a></li>
+      <li><a href="#structure">目录结构</a></li>
+      <li><a href="#architecture">系统架构</a></li>
+      <li><a href="#backend">后端分析引擎</a></li>
+      <li><a href="#complexity-algo">复杂度算法</a></li>
+      <li><a href="#risk-algo">风险评分算法</a></li>
+      <li><a href="#api">API 接口</a></li>
+      <li><a href="#frontend">前端可视化</a></li>
+      <li><a href="#testing">测试体系</a></li>
+      <li><a href="#config">配置参数</a></li>
+      <li><a href="#security">安全设计</a></li>
+      <li><a href="#features">特性矩阵</a></li>
+      <li><a href="#git">Git 历史</a></li>
+    </ul>
+  </div>
+
+  <!-- OVERVIEW -->
+  <section id="overview">
+    <h2>项目概述</h2>
+    <div class="card">
+      <p><strong>Python Complexity Analyzer</strong> 是一个生产就绪的 Python 代码质量分析平台，融合了 AST 静态分析引擎、FastAPI 后端（WebSocket 实时推送）和 React + ECharts 交互式前端，实现了类 SonarQube 的完整代码度量体系。</p>
+      <p>核心能力涵盖：McCabe 圈复杂度计算、LOC/SLOC 统计、函数重复检测、依赖图谱构建与循环检测、多维度风险评分（0–100），并提供 CLI 工具与 Web UI 两种使用模式，适合嵌入 CI/CD 流水线。</p>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem">
+        <span class="tag tag-blue">静态分析</span>
+        <span class="tag tag-green">代码质量</span>
+        <span class="tag tag-purple">可视化</span>
+        <span class="tag tag-orange">CI/CD 集成</span>
+        <span class="tag tag-gray">REST + WebSocket</span>
+        <span class="tag tag-blue">国际化 i18n</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- KPIs -->
+  <section id="kpis">
+    <h2>关键指标</h2>
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="val">2,023</div>
+        <div class="label">后端 Python 代码行</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="val">219</div>
+        <div class="label">单元测试数量</div>
+      </div>
+      <div class="kpi-card purple">
+        <div class="val">8</div>
+        <div class="label">测试模块</div>
+      </div>
+      <div class="kpi-card orange">
+        <div class="val">≥70%</div>
+        <div class="label">代码覆盖率门控</div>
+      </div>
+      <div class="kpi-card">
+        <div class="val">6</div>
+        <div class="label">核心分析模块</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="val">7</div>
+        <div class="label">REST + WS 接口</div>
+      </div>
+      <div class="kpi-card purple">
+        <div class="val">4</div>
+        <div class="label">前端可视化页面</div>
+      </div>
+      <div class="kpi-card red">
+        <div class="val">3</div>
+        <div class="label">CI Python 矩阵版本</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STRUCTURE -->
+  <section id="structure">
+    <h2>目录结构</h2>
+    <div class="card">
+      <pre class="tree"><span class="dir">Public_Python_Complexity_Analyzer/</span>
+├── README.md                   <span class="cm"># 英文文档 (350 行)</span>
+├── README_ZH.md                <span class="cm"># 中文文档 (354 行)</span>
+├── ANALYZER_README.md          <span class="cm"># 快速入门 (197 行)</span>
+├── LICENSE                     <span class="cm"># MIT License</span>
+├── pytest.ini                  <span class="cm"># Pytest 配置</span>
+├── requirements-dev.txt        <span class="cm"># 开发依赖</span>
+│
+├── <span class="dir">backend/</span>                    <span class="cm"># Python 分析引擎 + API</span>
+│   ├── <span class="dir">analyzer/</span>               <span class="cm"># 核心分析引擎 (6 模块)</span>
+│   │   ├── <span class="file">core.py</span>             <span class="cm"># 主编排器 analyze_project()</span>
+│   │   ├── <span class="file">metrics.py</span>          <span class="cm"># LOC/SLOC 统计、文件收集</span>
+│   │   ├── <span class="file">complexity.py</span>       <span class="cm"># McCabe CC 计算 _CCVisitor</span>
+│   │   ├── <span class="file">functions.py</span>        <span class="cm"># 函数提取 & 重复检测</span>
+│   │   ├── <span class="file">dependencies.py</span>     <span class="cm"># 导入图谱 & 循环检测</span>
+│   │   └── <span class="file">risk.py</span>             <span class="cm"># 风险评分算法</span>
+│   │
+│   └── <span class="dir">api/</span>                    <span class="cm"># FastAPI REST + WebSocket</span>
+│       ├── <span class="file">main.py</span>             <span class="cm"># 路由、CORS、限流</span>
+│       ├── <span class="file">models.py</span>           <span class="cm"># Pydantic 模式 + 校验</span>
+│       ├── <span class="file">report.py</span>           <span class="cm"># 自包含 HTML 报告生成</span>
+│       └── <span class="file">tasks.py</span>            <span class="cm"># 后台任务执行器</span>
+│
+├── <span class="dir">cli/</span>
+│   └── <span class="file">analyze.py</span>              <span class="cm"># CLI 入口（本地/Web 双模式）</span>
+│
+├── <span class="dir">frontend/</span>                   <span class="cm"># React + Vite + ECharts</span>
+│   ├── <span class="file">package.json</span>
+│   ├── <span class="file">vite.config.js</span>
+│   ├── <span class="file">index.html</span>
+│   └── <span class="dir">src/</span>
+│       ├── <span class="file">App.jsx</span>             <span class="cm"># 根组件（状态机）</span>
+│       ├── <span class="dir">pages/</span>              <span class="cm"># 4 个可视化页面</span>
+│       │   ├── <span class="file">Dashboard.jsx</span>
+│       │   ├── <span class="file">DependencyGraph.jsx</span>
+│       │   ├── <span class="file">ModuleAnalysis.jsx</span>
+│       │   └── <span class="file">RiskList.jsx</span>
+│       ├── <span class="dir">components/</span>
+│       │   ├── <span class="file">Layout.jsx</span>
+│       │   └── <span class="file">MetricCard.jsx</span>
+│       ├── <span class="dir">api/</span>
+│       │   └── <span class="file">client.js</span>          <span class="cm"># Axios 封装</span>
+│       ├── <span class="dir">i18n/</span>
+│       │   ├── <span class="file">en.js</span>
+│       │   ├── <span class="file">zh.js</span>
+│       │   └── <span class="file">index.jsx</span>
+│       └── <span class="dir">utils/</span>
+│           └── <span class="file">colors.js</span>
+│
+└── <span class="dir">tests/</span>                      <span class="cm"># pytest 测试套件 (219 条)</span>
+    ├── <span class="file">test_metrics.py</span>
+    ├── <span class="file">test_complexity.py</span>
+    ├── <span class="file">test_functions.py</span>
+    ├── <span class="file">test_dependencies.py</span>
+    ├── <span class="file">test_risk.py</span>
+    ├── <span class="file">test_core.py</span>
+    ├── <span class="file">test_api.py</span>
+    └── <span class="file">test_report.py</span></pre>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section id="architecture">
+    <h2>系统架构</h2>
+    <div class="card">
+      <p>系统采用三层架构，各层职责清晰、耦合度低：</p>
+      <div style="margin:1.5rem 0;text-align:center;font-family:var(--mono);font-size:.85rem">
+        <div style="display:inline-flex;flex-direction:column;gap:0;align-items:center;width:100%;max-width:560px">
+          <div style="background:#dbeafe;border:2px solid #3b82f6;border-radius:8px;padding:.75rem 2rem;width:100%;color:#1d4ed8;font-weight:700">
+            CLI (cli/analyze.py) &nbsp;|&nbsp; React Frontend (Vite + ECharts)
+          </div>
+          <div style="width:2px;height:24px;background:#94a3b8"></div>
+          <div style="background:#ede9fe;border:2px solid #8b5cf6;border-radius:8px;padding:.75rem 2rem;width:100%;color:#6d28d9;font-weight:700">
+            FastAPI Backend &nbsp;·&nbsp; REST / WebSocket &nbsp;·&nbsp; SQLite Tasks
+          </div>
+          <div style="width:2px;height:24px;background:#94a3b8"></div>
+          <div style="background:#dcfce7;border:2px solid #22c55e;border-radius:8px;padding:.75rem 2rem;width:100%;color:#15803d;font-weight:700">
+            Analyzer Engine &nbsp;·&nbsp; AST → Metrics → Risk → Report
+          </div>
+        </div>
+      </div>
+      <div class="card-grid">
+        <div>
+          <h3>数据流</h3>
+          <ul style="list-style:none;font-size:.875rem;color:var(--gray-600)">
+            <li style="padding:.3rem 0;border-bottom:1px solid var(--gray-100)">① 用户提交项目路径</li>
+            <li style="padding:.3rem 0;border-bottom:1px solid var(--gray-100)">② API 创建后台任务，返回 task_id</li>
+            <li style="padding:.3rem 0;border-bottom:1px solid var(--gray-100)">③ Analyzer 遍历 .py 文件，AST 解析</li>
+            <li style="padding:.3rem 0;border-bottom:1px solid var(--gray-100)">④ WebSocket 推送实时进度（0–100%）</li>
+            <li style="padding:.3rem 0;border-bottom:1px solid var(--gray-100)">⑤ 完成后返回完整 JSON 分析结果</li>
+            <li style="padding:.3rem 0">⑥ 前端渲染图表 / 可导出 HTML 报告</li>
+          </ul>
+        </div>
+        <div>
+          <h3>分析流水线阶段</h3>
+          <div style="font-size:.82rem;color:var(--gray-600)">
+            <div style="margin-bottom:.5rem"><strong>5%</strong>&nbsp; 文件收集（尊重 ignore 列表）
+              <div class="progress-bar"><div class="fill" style="width:5%"></div></div>
+            </div>
+            <div style="margin-bottom:.5rem"><strong>10–70%</strong>&nbsp; 逐文件 AST 解析
+              <div class="progress-bar"><div class="fill" style="width:70%"></div></div>
+            </div>
+            <div style="margin-bottom:.5rem"><strong>72%</strong>&nbsp; 跨文件重复检测（MD5）
+              <div class="progress-bar"><div class="fill" style="width:72%"></div></div>
+            </div>
+            <div style="margin-bottom:.5rem"><strong>78%</strong>&nbsp; 风险评分
+              <div class="progress-bar"><div class="fill" style="width:78%"></div></div>
+            </div>
+            <div style="margin-bottom:.5rem"><strong>85%</strong>&nbsp; 依赖图构建
+              <div class="progress-bar"><div class="fill" style="width:85%"></div></div>
+            </div>
+            <div style="margin-bottom:.5rem"><strong>92%</strong>&nbsp; Top-N 列表
+              <div class="progress-bar"><div class="fill" style="width:92%"></div></div>
+            </div>
+            <div><strong>100%</strong>&nbsp; 汇总统计
+              <div class="progress-bar"><div class="fill" style="width:100%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BACKEND -->
+  <section id="backend">
+    <h2>后端分析引擎</h2>
+
+    <div class="module-row">
+      <div class="module-icon">⚙️</div>
+      <div>
+        <div class="name">core.py — 主编排器</div>
+        <div class="desc"><code>analyze_project()</code> 函数统一调度所有分析子模块，聚合输出完整结构化结果。输出字段包括：<code>project_path</code>、<code>summary</code>、<code>files</code>、<code>dependency_graph</code>、<code>top_complex_functions</code>、<code>long_functions</code>、<code>duplicate_functions</code>。</div>
+      </div>
+    </div>
+
+    <div class="module-row">
+      <div class="module-icon">📏</div>
+      <div>
+        <div class="name">metrics.py — LOC/SLOC 统计</div>
+        <div class="desc">逐行分类：<strong>LOC</strong>（总行数）、<strong>SLOC</strong>（源码行，排除空行和纯注释行）、<strong>Blank</strong>（空行）、<strong>Comment</strong>（注释行）。默认忽略目录：<code>venv</code>、<code>.git</code>、<code>__pycache__</code>、<code>node_modules</code>、<code>dist</code>、<code>build</code> 等 14 个。</div>
+      </div>
+    </div>
+
+    <div class="module-row">
+      <div class="module-icon">🔀</div>
+      <div>
+        <div class="name">complexity.py — McCabe 圈复杂度</div>
+        <div class="desc">自研 <code>_CCVisitor</code> AST 访问器，无需第三方库，完整支持 Python 3.10+ <code>match/case</code>。基础复杂度 = 1，每个决策点 +1。CC ≥ 10 标记为 high（阈值可配置）。</div>
+      </div>
+    </div>
+
+    <div class="module-row">
+      <div class="module-icon">🔍</div>
+      <div>
+        <div class="name">functions.py — 函数提取 & 重复检测</div>
+        <div class="desc">提取函数/方法元数据（行范围、参数、CC、类型注解），重复检测采用空白归一化 + MD5 哈希，对重构后的副本同样有效。标记维度：<code>is_long</code>（≥50行）、<code>is_high_complexity</code>（CC≥10）、<code>is_many_params</code>（>5参数）。</div>
+      </div>
+    </div>
+
+    <div class="module-row">
+      <div class="module-icon">🕸️</div>
+      <div>
+        <div class="name">dependencies.py — 依赖图 & 循环检测</div>
+        <div class="desc">AST 解析 <code>import</code> / <code>from X import Y</code>（含相对导入），用 NetworkX 构建有向图，区分标准库、第三方库和项目内部导入。循环检测返回所有环路列表。</div>
+      </div>
+    </div>
+
+    <div class="module-row">
+      <div class="module-icon">⚠️</div>
+      <div>
+        <div class="name">risk.py — 风险评分算法</div>
+        <div class="desc">四因子加权综合评分（0–100），见下方算法章节。评级：A&lt;20 / B 20–39 / C 40–59 / D 60–79 / F≥80。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPLEXITY ALGO -->
+  <section id="complexity-algo">
+    <h2>McCabe 圈复杂度算法</h2>
+    <div class="card">
+      <p>基于 AST 访问器统计决策点，无外部依赖，完整支持 Python 3.10+ 新语法：</p>
+      <div class="tbl-wrap" style="margin-top:1rem">
+        <table>
+          <thead>
+            <tr><th>AST 节点 / 语法构造</th><th>CC 增量</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>if</code> / <code>elif</code></td><td>+1</td><td>条件分支</td></tr>
+            <tr><td><code>for</code> / <code>async for</code> / <code>while</code></td><td>+1</td><td>循环</td></tr>
+            <tr><td><code>except</code> 处理器</td><td>+1</td><td>异常捕获分支</td></tr>
+            <tr><td>三元表达式 <code>x if c else y</code></td><td>+1</td><td>内联条件</td></tr>
+            <tr><td>布尔运算符 <code>and</code>/<code>or</code>（N 个操作数）</td><td>+N−1</td><td>短路运算</td></tr>
+            <tr><td>推导式迭代 <code>for x in ...</code></td><td>+1</td><td>列表/集合/字典推导</td></tr>
+            <tr><td>推导式过滤 <code>if</code> 子句</td><td>+1</td><td>推导条件</td></tr>
+            <tr><td><code>match</code> 语句每个 <code>case</code></td><td>+1</td><td>Python 3.10+ 模式匹配</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:1rem;padding:.75rem 1rem;background:var(--gray-50);border-radius:6px;font-size:.875rem;color:var(--gray-700)">
+        <strong>基础值：</strong> 每个函数起始 CC = 1。高复杂度阈值 <code>HIGH_CC_THRESHOLD</code> 默认为 <strong>10</strong>（可通过环境变量覆盖）。
+      </div>
+    </div>
+  </section>
+
+  <!-- RISK ALGO -->
+  <section id="risk-algo">
+    <h2>风险评分算法</h2>
+    <div class="card">
+      <p>每个模块的风险评分是四个维度的加权综合，归一化至 0–100 区间：</p>
+      <div class="formula">
+        <strong>risk_score</strong> =<br>
+        &nbsp;&nbsp;0.40 × normalize(avg_cc,&nbsp;&nbsp;&nbsp;&nbsp;lo=0, hi=max(project_max_cc, 10))<br>
+        + 0.30 × normalize(loc,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lo=0, hi=max(project_max_loc, 500))<br>
+        + 0.20 × (high_cc_functions / total_functions) × 100<br>
+        + 0.10 × (duplicate_functions / total_functions) × 100
+      </div>
+      <div class="tbl-wrap" style="margin-top:1.25rem">
+        <table>
+          <thead>
+            <tr><th>评级</th><th>分数范围</th><th>含义</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="grade grade-A">A</span></td><td>&lt; 20</td><td>低风险，代码质量优秀</td></tr>
+            <tr><td><span class="grade grade-B">B</span></td><td>20 – 39</td><td>中低风险，可接受</td></tr>
+            <tr><td><span class="grade grade-C">C</span></td><td>40 – 59</td><td>中等风险，建议重构</td></tr>
+            <tr><td><span class="grade grade-D">D</span></td><td>60 – 79</td><td>高风险，需优先关注</td></tr>
+            <tr><td><span class="grade grade-F">F</span></td><td>≥ 80</td><td>极高风险，紧急重构</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- API -->
+  <section id="api">
+    <h2>API 接口</h2>
+    <div class="card">
+      <h3>REST Endpoints</h3>
+      <div class="endpoint">
+        <span class="method GET">GET</span>
+        <span class="ep-path">/health</span>
+        <span class="ep-desc">健康检查、Python 版本、建议路径</span>
+      </div>
+      <div class="endpoint">
+        <span class="method POST">POST</span>
+        <span class="ep-path">/analyze</span>
+        <span class="ep-desc">提交分析任务 → 返回 <code>{task_id, status}</code></span>
+      </div>
+      <div class="endpoint">
+        <span class="method GET">GET</span>
+        <span class="ep-path">/result/{task_id}</span>
+        <span class="ep-desc">轮询结果（完成时返回完整 JSON）</span>
+      </div>
+      <div class="endpoint">
+        <span class="method GET">GET</span>
+        <span class="ep-path">/tasks</span>
+        <span class="ep-desc">列出所有任务</span>
+      </div>
+      <div class="endpoint">
+        <span class="method GET">GET</span>
+        <span class="ep-path">/report/{task_id}</span>
+        <span class="ep-desc">下载自包含 HTML 报告</span>
+      </div>
+      <div class="endpoint">
+        <span class="method WS">WS</span>
+        <span class="ep-path">/ws/{task_id}</span>
+        <span class="ep-desc">WebSocket 实时进度推送</span>
+      </div>
+
+      <hr>
+
+      <h3 style="margin-top:1rem">请求/响应模型</h3>
+      <pre><span class="kw">class</span> AnalyzeRequest(BaseModel):
+    project_path: <span class="kw">str</span>
+    ignore_dirs: Optional[List[<span class="kw">str</span>]] = <span class="num">None</span>  <span class="cm"># 校验：不含 ".." "/" "\"</span>
+
+<span class="kw">class</span> TaskStatus(BaseModel):
+    task_id: <span class="kw">str</span>
+    status:  Literal[<span class="str">"pending"</span>, <span class="str">"processing"</span>, <span class="str">"completed"</span>, <span class="str">"failed"</span>]
+    progress: <span class="kw">int</span>           <span class="cm"># 0–100</span>
+    message:  <span class="kw">str</span>
+    result:   Optional[Dict[<span class="kw">str</span>, Any]] = <span class="num">None</span>
+    error:    Optional[<span class="kw">str</span>] = <span class="num">None</span></pre>
+    </div>
+
+    <div class="card">
+      <h3>任务持久化 (tasks.py)</h3>
+      <div class="card-grid">
+        <div>
+          <ul style="font-size:.875rem;color:var(--gray-600);list-style:none">
+            <li style="padding:.3rem 0">✅ ThreadPoolExecutor（工作线程数可配置）</li>
+            <li style="padding:.3rem 0">✅ 内存 store + SQLite 双重持久化</li>
+            <li style="padding:.3rem 0">✅ WebSocket 订阅（asyncio.Queue）</li>
+            <li style="padding:.3rem 0">✅ 任务超时强制终止（默认 300s）</li>
+          </ul>
+        </div>
+        <div>
+          <p style="font-size:.875rem;color:var(--gray-600)">SQLite 表结构：</p>
+          <pre style="font-size:.78rem">task_id | status | progress
+message | result_json | error
+created_at | updated_at</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FRONTEND -->
+  <section id="frontend">
+    <h2>前端可视化</h2>
+    <div class="card-grid">
+      <div class="card" style="margin-bottom:0">
+        <h3>🗺️ Dashboard</h3>
+        <p style="font-size:.875rem">KPI 卡片 + 风险热力树图（面积=LOC，颜色=风险分）+ CC 分布直方图 + 高风险模块排行。</p>
+        <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.4rem">
+          <span class="tag tag-blue">ECharts Treemap</span>
+          <span class="tag tag-purple">直方图</span>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <h3>🕸️ DependencyGraph</h3>
+        <p style="font-size:.875rem">力导向图，红色节点/边标注循环依赖，支持"仅项目内"与"全部导入"视图切换。</p>
+        <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.4rem">
+          <span class="tag tag-red">循环检测</span>
+          <span class="tag tag-gray">NetworkX</span>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <h3>📊 ModuleAnalysis</h3>
+        <p style="font-size:.875rem">可搜索/可排序全文件表格，每行展开显示函数级 CC 柱状图和导入列表。</p>
+        <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.4rem">
+          <span class="tag tag-green">逐行展开</span>
+          <span class="tag tag-blue">CC 柱状图</span>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <h3>⚠️ RiskList</h3>
+        <p style="font-size:.875rem">Tab 切换：高复杂函数 Top10 / 长函数（≥50行）/ 大文件 Top10 / 重复函数列表。</p>
+        <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.4rem">
+          <span class="tag tag-orange">Top-N 榜单</span>
+          <span class="tag tag-red">重复检测</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>技术栈</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>依赖</th><th>版本</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>react</code></td><td>^18.2.0</td><td>UI 框架</td></tr>
+            <tr><td><code>react-router-dom</code></td><td>^6.18.0</td><td>客户端路由</td></tr>
+            <tr><td><code>echarts</code></td><td>^5.4.3</td><td>图表渲染引擎</td></tr>
+            <tr><td><code>echarts-for-react</code></td><td>^3.0.2</td><td>ECharts React 封装</td></tr>
+            <tr><td><code>axios</code></td><td>^1.6.0</td><td>HTTP 客户端</td></tr>
+            <tr><td><code>vite</code></td><td>–</td><td>构建工具</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:1rem;padding:.75rem 1rem;background:#fef3c7;border-radius:6px;font-size:.875rem">
+        <strong>i18n：</strong> 内置中英双语，通过 React Context 提供翻译上下文，支持运行时切换。
+      </div>
+    </div>
+  </section>
+
+  <!-- TESTING -->
+  <section id="testing">
+    <h2>测试体系</h2>
+    <div class="card">
+      <div class="test-row">
+        <span class="test-name">test_metrics.py</span>
+        <span class="test-count">~25</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:70%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">LOC/SLOC 统计、文件收集、ignore 合并</div>
+        </div>
+      </div>
+      <div class="test-row">
+        <span class="test-name">test_complexity.py</span>
+        <span class="test-count">~35</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:100%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">McCabe CC：if/for/while/except/三元/bool/推导/match</div>
+        </div>
+      </div>
+      <div class="test-row">
+        <span class="test-name">test_functions.py</span>
+        <span class="test-count">~30</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:86%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">函数提取、重复检测、参数计数、哈希稳定性</div>
+        </div>
+      </div>
+      <div class="test-row">
+        <span class="test-name">test_dependencies.py</span>
+        <span class="test-count">~25</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:71%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">导入解析、相对导入、图构建、循环检测</div>
+        </div>
+      </div>
+      <div class="test-row">
+        <span class="test-name">test_risk.py</span>
+        <span class="test-count">~20</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:57%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">归一化、评级、风险计算、上下限行为</div>
+        </div>
+      </div>
+      <div class="test-row">
+        <span class="test-name">test_core.py</span>
+        <span class="test-count">~30</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:86%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">端到端分析、进度回调、ignore 目录、失败文件</div>
+        </div>
+      </div>
+      <div class="test-row">
+        <span class="test-name">test_api.py</span>
+        <span class="test-count">~25</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:71%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">GET/POST/WS 接口、403/404/400/429 边界、限流</div>
+        </div>
+      </div>
+      <div class="test-row">
+        <span class="test-name">test_report.py</span>
+        <span class="test-count">~15</span>
+        <div class="test-bar">
+          <div class="progress-bar"><div class="fill" style="width:43%"></div></div>
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px">HTML 生成、XSS 转义、KPI 卡片、表格行、截断</div>
+        </div>
+      </div>
+
+      <div style="margin-top:1.5rem;padding:1rem;background:var(--gray-50);border-radius:6px">
+        <h3 style="margin-bottom:.75rem">常用测试命令</h3>
+        <pre>pytest                                              <span class="cm"># 全量运行</span>
+pytest --cov=backend --cov-report=term-missing      <span class="cm"># 覆盖率报告</span>
+pytest --cov=backend --cov-fail-under=70            <span class="cm"># 70% 门控</span>
+pytest tests/test_complexity.py -v                  <span class="cm"># 单模块详细</span></pre>
+      </div>
+
+      <div style="margin-top:1rem;display:flex;align-items:center;gap:1rem;padding:.75rem 1rem;background:#dcfce7;border-radius:6px">
+        <span style="font-size:1.5rem">✅</span>
+        <div>
+          <div style="font-weight:700;color:#15803d">CI/CD: GitHub Actions</div>
+          <div style="font-size:.85rem;color:#166534">Python 3.10 / 3.11 / 3.12 三版本矩阵，覆盖率 ≥70% 强制门控</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONFIG -->
+  <section id="config">
+    <h2>配置参数</h2>
+    <div class="card">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>环境变量</th><th>默认值</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="env-key">ALLOWED_BASE_DIR</td>
+              <td><code>~</code> (home)</td>
+              <td>路径遍历防护根目录</td>
+            </tr>
+            <tr>
+              <td class="env-key">ALLOWED_ORIGINS</td>
+              <td><code>localhost:5173/4173/3000</code></td>
+              <td>CORS 允许来源</td>
+            </tr>
+            <tr>
+              <td class="env-key">ANALYZE_RATE_LIMIT</td>
+              <td><code>10</code></td>
+              <td>每 IP 每 60s 最多 /analyze 请求数</td>
+            </tr>
+            <tr>
+              <td class="env-key">ANALYSIS_TIMEOUT</td>
+              <td><code>300</code></td>
+              <td>任务强制失败前的秒数</td>
+            </tr>
+            <tr>
+              <td class="env-key">ANALYSIS_MAX_WORKERS</td>
+              <td>CPU 核心数</td>
+              <td>ThreadPoolExecutor 工作线程数</td>
+            </tr>
+            <tr>
+              <td class="env-key">LONG_FUNC_THRESHOLD</td>
+              <td><code>50</code></td>
+              <td>"长函数"行数阈值</td>
+            </tr>
+            <tr>
+              <td class="env-key">HIGH_CC_THRESHOLD</td>
+              <td><code>10</code></td>
+              <td>"高复杂度"CC 阈值</td>
+            </tr>
+            <tr>
+              <td class="env-key">MANY_PARAMS_THRESHOLD</td>
+              <td><code>5</code></td>
+              <td>"多参数"参数数量阈值</td>
+            </tr>
+            <tr>
+              <td class="env-key">TASK_DB_PATH</td>
+              <td><code>tasks.db</code></td>
+              <td>SQLite 数据库路径</td>
+            </tr>
+            <tr>
+              <td class="env-key">VITE_API_BASE</td>
+              <td>自动代理</td>
+              <td>前端 API 端点覆盖</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECURITY -->
+  <section id="security">
+    <h2>安全设计</h2>
+    <div class="card-grid">
+      <div class="card" style="margin-bottom:0">
+        <h3>🔒 路径遍历防护</h3>
+        <p style="font-size:.875rem"><code>_assert_safe_path()</code> 将分析路径限制在 <code>ALLOWED_BASE_DIR</code>（默认：用户 home 目录），拒绝 <code>..</code> 等跳出尝试。</p>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <h3>🚦 滑动窗口限流</h3>
+        <p style="font-size:.875rem">基于 <code>deque</code> 的内存滑动窗口，按 IP 限速（无需 Redis），默认 10 次请求/60s，超出返回 429。</p>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <h3>🛡️ XSS 防护</h3>
+        <p style="font-size:.875rem">HTML 报告生成器全面转义用户数据，防止分析结果中的恶意代码注入到报告文件。</p>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <h3>✅ 输入校验</h3>
+        <p style="font-size:.875rem">Pydantic 模型对 <code>ignore_dirs</code> 严格校验，禁止包含 <code>..</code>、<code>/</code>、<code>\</code> 等危险字符。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <h2>特性矩阵</h2>
+    <div class="card">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>特性</th><th>实现方式</th><th>状态</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>圈复杂度计算</td><td>AST _CCVisitor，Python 3.10+ match/case</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>参数分析</td><td>n_params 计数，many_params 标记</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>LOC/SLOC 统计</td><td>逐行分类</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>函数分析</td><td>数量、CC 均值/最大值、长/高CC 标记</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>重复函数检测</td><td>MD5 哈希（归一化函数体）</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>依赖图谱</td><td>NetworkX + 循环检测</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>风险评分</td><td>4 因子加权综合 0–100</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>实时进度推送</td><td>WebSocket + HTTP 轮询降级</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>任务超时</td><td>ThreadPoolExecutor TimeoutError</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>失败文件追踪</td><td>语法错误单独记录</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>HTML 报告导出</td><td>自包含 ECharts + 表格</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>速率限制</td><td>滑动窗口，按 IP</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>交互式 UI</td><td>React + ECharts 可视化</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>CLI 工具</td><td>本地/Web 双模式，JSON/摘要输出</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>路径安全防护</td><td>ALLOWED_BASE_DIR 遍历守卫</td><td><span class="tag tag-green">完整支持</span></td></tr>
+            <tr><td>CI/CD 集成</td><td>GitHub Actions 矩阵（3.10/3.11/3.12）</td><td><span class="tag tag-green">完整支持</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLI USAGE -->
+  <section id="cli">
+    <h2>CLI 使用示例</h2>
+    <div class="card">
+      <pre><span class="cm"># 本地分析（无需服务器）</span>
+python cli/analyze.py /path/to/project
+python cli/analyze.py /path/to/project --json
+python cli/analyze.py /path/to/project --output out.json
+python cli/analyze.py /path/to/project --ignore tests docs
+
+<span class="cm"># Web 模式（启动服务器）</span>
+python cli/analyze.py /path/to/project --web --port 8000</pre>
+
+      <div style="margin-top:1rem;background:var(--gray-900);border-radius:var(--radius);padding:1.25rem;font-family:var(--mono);font-size:.82rem;color:#e2e8f0;line-height:1.8">
+        <div style="color:#6b7280">============================================================</div>
+        <div>&nbsp; Analysis: <span style="color:#86efac">my_project</span></div>
+        <div style="color:#6b7280">============================================================</div>
+        <div>&nbsp; Files&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#fcd34d">42</span></div>
+        <div>&nbsp; LOC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#fcd34d">8,301</span></div>
+        <div>&nbsp; SLOC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#fcd34d">5,920</span></div>
+        <div>&nbsp; Functions&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#fcd34d">187</span></div>
+        <div>&nbsp; Avg CC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#86efac">2.41</span></div>
+        <div>&nbsp; Max CC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#f87171">18</span></div>
+        <div>&nbsp; High-CC funcs&nbsp; : <span style="color:#fcd34d">7</span></div>
+        <div>&nbsp; Long funcs&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#fcd34d">3</span></div>
+        <div>&nbsp; Duplicates&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#fcd34d">4</span>&nbsp; (2.1%)</div>
+        <div>&nbsp; Cycles&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#f87171">1</span></div>
+        <div>&nbsp; Risk Score&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#fbbf24">34.2 / 100</span></div>
+        <div>&nbsp; Elapsed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <span style="color:#86efac">0.38s</span></div>
+        <div style="color:#6b7280">============================================================</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GIT -->
+  <section id="git">
+    <h2>Git 历史</h2>
+    <div class="card">
+      <ul class="timeline">
+        <li><span class="hash">fb23be2</span> hello world</li>
+        <li><span class="hash">4bd973c</span> 初始化readme</li>
+        <li><span class="hash">c932a68</span> Initial commit</li>
+      </ul>
+      <div style="margin-top:1rem;padding:.75rem 1rem;background:#fef3c7;border-radius:6px;font-size:.875rem;color:#92400e">
+        <strong>注：</strong> 项目提交历史较短，当前为初始版本。代码库规模完整、测试覆盖全面，具备生产就绪状态。
+      </div>
+    </div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section>
+    <h2>总结评估</h2>
+    <div class="card">
+      <div class="card-grid">
+        <div>
+          <h3 style="color:var(--success)">✅ 亮点</h3>
+          <ul style="font-size:.875rem;color:var(--gray-600);padding-left:1.25rem;line-height:2">
+            <li>自研 AST 复杂度引擎，无第三方分析库依赖</li>
+            <li>完整的 Python 3.10+ match/case 支持</li>
+            <li>219 条测试，覆盖率门控 ≥70%</li>
+            <li>WebSocket 实时进度 + HTTP 轮询优雅降级</li>
+            <li>中英双语国际化支持</li>
+            <li>自包含 HTML 报告（无运行时依赖）</li>
+            <li>SQLite 任务持久化（服务重启不丢失）</li>
+            <li>多层安全防护（路径遍历、XSS、限流）</li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="color:var(--warning)">💡 可扩展方向</h3>
+          <ul style="font-size:.875rem;color:var(--gray-600);padding-left:1.25rem;line-height:2">
+            <li>增加类型注解覆盖率指标统计</li>
+            <li>支持 Jupyter Notebook (.ipynb) 分析</li>
+            <li>Git blame 集成，追踪代码引入者</li>
+            <li>支持历史对比（趋势图）</li>
+            <li>插件化规则系统（自定义检测规则）</li>
+            <li>导出 PDF / CSV 报告格式</li>
+            <li>Docker 容器化一键部署</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div>Python Complexity Analyzer &nbsp;·&nbsp; MIT License &nbsp;·&nbsp; Copyright 2026 AaronharveyHan</div>
+  <div style="margin-top:.4rem;color:var(--gray-400)">报告生成于 2026-06-04 &nbsp;·&nbsp; claude-sonnet-4-6</div>
+</footer>
+
+</body>
+</html>
