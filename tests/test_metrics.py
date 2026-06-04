@@ -145,6 +145,54 @@ class TestCollectFilePaths:
         assert result[0].name == "code.py"
 
 
+class TestCountLinesTokenizeAccuracy:
+    """Regression tests for H-1: tokenize-based SLOC accuracy."""
+
+    def test_hash_in_triple_quoted_string_is_sloc(self):
+        # The '#' line is inside a string literal — not a real comment.
+        source = '"""\n# not a comment\n"""\n'
+        m = count_lines(source)
+        assert m.comment == 0
+        assert m.sloc > 0
+
+    def test_hash_in_single_line_string_is_sloc(self):
+        source = 'x = "# not a comment"'
+        m = count_lines(source)
+        assert m.sloc == 1
+        assert m.comment == 0
+
+    def test_multiline_docstring_no_comment_lines(self):
+        source = 'def foo():\n    """\n    # hash inside docstring\n    """\n    pass\n'
+        m = count_lines(source)
+        assert m.comment == 0
+        assert m.sloc == m.loc - m.blank - m.comment
+
+    def test_real_standalone_comment_still_counted(self):
+        source = '# real comment\nx = 1\n'
+        m = count_lines(source)
+        assert m.comment == 1
+        assert m.sloc == 1
+
+    def test_inline_comment_is_sloc_not_comment(self):
+        source = 'x = 1  # inline\n'
+        m = count_lines(source)
+        assert m.sloc == 1
+        assert m.comment == 0
+
+    def test_blank_inside_multiline_string_is_sloc(self):
+        # A blank-looking line inside a string literal is SLOC, not a blank line.
+        source = 'x = """\nhello\n\nworld\n"""\n'
+        m = count_lines(source)
+        assert m.blank == 0
+        assert m.comment == 0
+        assert m.sloc == 5
+
+    def test_invariant_sloc_equals_loc_minus_blank_minus_comment(self):
+        source = 'x = """\n# hash\n\n"""\n# real\ny = 2\n'
+        m = count_lines(source)
+        assert m.sloc == m.loc - m.blank - m.comment
+
+
 class TestCollectFilePathsSymlinks:
     """Symlinks must not let collection escape the project root (audit C-3)."""
 
