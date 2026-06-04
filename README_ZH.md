@@ -49,7 +49,7 @@ Python_Complexity_Analyzer/
 │       ├── api/            # axios 客户端 (VITE_API_BASE 可配置)
 │       ├── i18n/           # 英文 / 中文翻译
 │       └── utils/          # 共享颜色工具
-└── tests/                  # pytest 测试套件 (219 个测试)
+└── tests/                  # pytest 测试套件 (281 个测试)
     ├── test_metrics.py
     ├── test_complexity.py
     ├── test_functions.py
@@ -338,7 +338,7 @@ python -m pytest --cov=backend --cov-fail-under=70
 python -m pytest tests/test_complexity.py -v
 ```
 
-测试套件包含 **219 个测试**，覆盖所有后端模块和 API 端点。
+测试套件包含 **281 个测试**，覆盖所有后端模块和 API 端点。
 
 | 测试模块 | 覆盖内容 |
 |----------|----------|

@@ -47,7 +47,7 @@ Python_Complexity_Analyzer/
 │       ├── api/            # axios client (VITE_API_BASE configurable)
 │       ├── i18n/           # English / Chinese translations
 │       └── utils/          # Shared color helpers
-└── tests/                  # pytest test suite (219 tests)
+└── tests/                  # pytest test suite (281 tests)
     ├── test_metrics.py
     ├── test_complexity.py
     ├── test_functions.py
@@ -334,7 +334,7 @@ python -m pytest --cov=backend --cov-fail-under=70
 python -m pytest tests/test_complexity.py -v
 ```
 
-The suite contains **219 tests** covering all backend modules and API endpoints.
+The suite contains **281 tests** covering all backend modules and API endpoints.
 
 | Test module | What it covers |
 |-------------|----------------|
