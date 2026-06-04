@@ -169,3 +169,68 @@ class TestProgressCallback:
         analyze_project(tmp_path, progress_cb=lambda pct, msg: calls.append(pct))
         for i in range(1, len(calls)):
             assert calls[i] >= calls[i - 1], f"progress went backwards at step {i}"
+
+
+class TestDuplicateFlagConsistency:
+    """Regression tests for the same-qualname duplicate-flag collision (audit C-2)."""
+
+    # Two module-level functions with the SAME qualname (`handler`) via a
+    # conditional redefinition, with byte-identical bodies. The second is a
+    # genuine duplicate of the first. The old qualname-keyed back-fill collapsed
+    # both records to a single value, corrupting the per-file view.
+    _COLLIDING = (
+        "import sys\n"
+        "if sys.platform == 'win32':\n"
+        "    def handler(data):\n"
+        "        total = 0\n"
+        "        for item in data:\n"
+        "            total += item\n"
+        "        result = total * 2\n"
+        "        return result\n"
+        "else:\n"
+        "    def handler(data):\n"
+        "        total = 0\n"
+        "        for item in data:\n"
+        "            total += item\n"
+        "        result = total * 2\n"
+        "        return result\n"
+    )
+
+    def test_exactly_one_duplicate_in_summary(self, tmp_path):
+        _write(tmp_path / "m.py", self._COLLIDING)
+        s = analyze_project(tmp_path)["summary"]
+        # First occurrence is the original; only the second is a duplicate.
+        assert s["duplicate_functions"] == 1
+
+    def test_per_file_view_matches_summary(self, tmp_path):
+        """The per-file is_duplicate flags must agree with the summary count.
+
+        Under the old collision bug the lookup keyed by ``file::qualname`` wrote
+        the *last* same-named function's flag onto every record sharing that
+        qualname, so the per-file view reported 2 duplicates while the summary
+        reported 1 — an internally inconsistent result.
+        """
+        _write(tmp_path / "m.py", self._COLLIDING)
+        result = analyze_project(tmp_path)
+        per_file_dupes = sum(
+            1
+            for fi in result["files"]
+            for fn in fi["functions"]
+            if fn["is_duplicate"]
+        )
+        assert per_file_dupes == result["summary"]["duplicate_functions"] == 1
+
+    def test_same_qualname_records_not_collapsed(self, tmp_path):
+        """Both `handler` records survive and carry distinct duplicate flags."""
+        _write(tmp_path / "m.py", self._COLLIDING)
+        files = analyze_project(tmp_path)["files"]
+        handlers = [
+            fn
+            for fi in files
+            for fn in fi["functions"]
+            if fn["qualname"] == "handler"
+        ]
+        assert len(handlers) == 2
+        flags = sorted(fn["is_duplicate"] for fn in handlers)
+        # exactly one False (original) and one True (duplicate)
+        assert flags == [False, True]

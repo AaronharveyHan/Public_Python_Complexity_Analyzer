@@ -98,6 +98,10 @@ def analyze_project(
     file_infos: list[dict] = []
     imports_map: dict[str, list[str]] = {}
     all_functions: list[FunctionDetail] = []
+    # Per-file FunctionDetail lists, aligned 1:1 with file_infos. Used to build
+    # each file's function dicts *after* cross-file duplicate detection has run,
+    # so the is_duplicate/duplicate_of flags are already final.
+    per_file_funcs: list[list[FunctionDetail]] = []
     failed_files: list[dict] = []
 
     for idx, fpath in enumerate(files):
@@ -133,6 +137,7 @@ def analyze_project(
 
         imports_map[mid] = imports
         all_functions.extend(funcs)
+        per_file_funcs.append(funcs)
 
         fi: dict = {
             "path":            str(fpath),
@@ -142,7 +147,7 @@ def analyze_project(
             "sloc":            lm.sloc,
             "blank":           lm.blank,
             "comment":         lm.comment,
-            "functions":       [_fn_to_dict(fn) for fn in funcs],
+            "functions":       [],   # filled after duplicate detection (below)
             "n_functions":     len(funcs),
             "n_classes":       _count_classes(tree),
             "imports":         imports,
@@ -156,14 +161,13 @@ def analyze_project(
     # ── 3. Duplicate detection (cross-file) ───────────────────────────────────
     _progress(72, "Detecting duplicate functions…")
     detect_duplicates(all_functions)
-    # Refresh is_duplicate in file_infos from updated all_functions
-    fn_lookup: dict[str, bool] = {
-        f"{fn.file}::{fn.qualname}": fn.is_duplicate for fn in all_functions
-    }
-    for fi in file_infos:
-        for fn_dict in fi["functions"]:
-            key = f"{fi['relative_path']}::{fn_dict['qualname']}"
-            fn_dict["is_duplicate"] = fn_lookup.get(key, False)
+    # detect_duplicates mutates the FunctionDetail objects in place, so build
+    # each file's function dicts now — they pick up the final is_duplicate /
+    # duplicate_of flags directly. This avoids any qualname-keyed lookup, which
+    # would collide for same-named functions in one file (property/setter,
+    # @overload stubs, conditional redefinitions).
+    for fi, funcs in zip(file_infos, per_file_funcs):
+        fi["functions"] = [_fn_to_dict(fn) for fn in funcs]
 
     # ── 4. Risk scoring ───────────────────────────────────────────────────────
     _progress(78, "Computing risk scores…")
