@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Complexity Analyzer — 代码审计报告</title>
+<style>
+  :root {
+    --crit: #dc2626; --crit-bg: #fef2f2; --crit-bd: #fecaca;
+    --high: #ea580c; --high-bg: #fff7ed; --high-bd: #fed7aa;
+    --med:  #d97706; --med-bg:  #fffbeb; --med-bd:  #fde68a;
+    --low:  #2563eb; --low-bg:  #eff6ff; --low-bd:  #bfdbfe;
+    --ok:   #16a34a; --ok-bg:   #f0fdf4; --ok-bd:   #bbf7d0;
+    --g50:#f9fafb; --g100:#f3f4f6; --g200:#e5e7eb; --g300:#d1d5db;
+    --g500:#6b7280; --g600:#4b5563; --g700:#374151; --g800:#1f2937; --g900:#111827;
+    --font:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --mono:'Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
+    --shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font);color:var(--g800);background:var(--g50);line-height:1.6}
+
+  nav{position:sticky;top:0;z-index:100;background:var(--g900);color:#fff;
+    padding:0 2rem;display:flex;align-items:center;gap:1.25rem;height:56px;
+    box-shadow:0 2px 8px rgba(0,0,0,.25)}
+  nav .logo{font-weight:700;font-size:1.05rem;color:#f87171;flex-shrink:0}
+  nav a{color:#d1d5db;text-decoration:none;font-size:.85rem;padding:.25rem .5rem;border-radius:4px;transition:.15s}
+  nav a:hover{color:#fff;background:rgba(255,255,255,.08)}
+  nav .spacer{flex:1}
+
+  main{max-width:1180px;margin:0 auto;padding:2.5rem 2rem 4rem}
+  section{margin-bottom:2.75rem}
+  h1{font-size:2rem;font-weight:800;color:var(--g900)}
+  h2{font-size:1.35rem;font-weight:700;color:var(--g800);border-left:4px solid var(--crit);padding-left:.75rem;margin-bottom:1.25rem}
+  h2.s-high{border-color:var(--high)} h2.s-med{border-color:var(--med)}
+  h2.s-low{border-color:var(--low)} h2.s-ok{border-color:var(--ok)}
+  h2.s-info{border-color:var(--g500)}
+  p{color:var(--g600);margin-bottom:.75rem}
+
+  .hero{background:linear-gradient(135deg,#7f1d1d 0%,#b91c1c 45%,#ea580c 100%);
+    border-radius:16px;color:#fff;padding:2.5rem;margin-bottom:2.5rem;position:relative;overflow:hidden}
+  .hero::after{content:'';position:absolute;right:-50px;top:-50px;width:220px;height:220px;background:rgba(255,255,255,.06);border-radius:50%}
+  .hero h1{color:#fff;margin-bottom:.5rem}
+  .hero .sub{color:#fed7aa;font-size:1rem;margin-bottom:1.25rem}
+  .hero .chips{display:flex;flex-wrap:wrap;gap:.6rem}
+  .hero .chip{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:3px 14px;font-size:.8rem;color:#fff5ed}
+
+  /* severity summary cards */
+  .sev-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem}
+  .sev-card{border-radius:10px;padding:1.25rem 1.5rem;box-shadow:var(--shadow);border-top:4px solid}
+  .sev-card .n{font-size:2.4rem;font-weight:800;line-height:1}
+  .sev-card .l{font-size:.85rem;font-weight:600;margin-top:.3rem}
+  .sc-crit{background:var(--crit-bg);border-color:var(--crit)} .sc-crit .n,.sc-crit .l{color:var(--crit)}
+  .sc-high{background:var(--high-bg);border-color:var(--high)} .sc-high .n,.sc-high .l{color:var(--high)}
+  .sc-med{background:var(--med-bg);border-color:var(--med)} .sc-med .n,.sc-med .l{color:var(--med)}
+  .sc-low{background:var(--low-bg);border-color:var(--low)} .sc-low .n,.sc-low .l{color:var(--low)}
+  .sc-ok{background:var(--ok-bg);border-color:var(--ok)} .sc-ok .n,.sc-ok .l{color:var(--ok)}
+
+  /* finding card */
+  .finding{background:#fff;border-radius:10px;box-shadow:var(--shadow);margin-bottom:1rem;overflow:hidden;border-left:5px solid var(--g300)}
+  .finding.f-crit{border-left-color:var(--crit)}
+  .finding.f-high{border-left-color:var(--high)}
+  .finding.f-med{border-left-color:var(--med)}
+  .finding.f-low{border-left-color:var(--low)}
+  .finding .head{padding:1rem 1.5rem;display:flex;align-items:flex-start;gap:.75rem;flex-wrap:wrap}
+  .finding .id{font-family:var(--mono);font-weight:700;color:var(--g500);font-size:.9rem;flex-shrink:0}
+  .finding .title{font-weight:700;font-size:1.02rem;color:var(--g900);flex:1;min-width:240px}
+  .finding .body{padding:0 1.5rem 1.25rem;font-size:.9rem;color:var(--g700)}
+  .finding .body p{margin-bottom:.6rem;color:var(--g700)}
+  .finding .loc{font-family:var(--mono);font-size:.8rem;color:var(--low);background:var(--low-bg);padding:2px 8px;border-radius:4px;display:inline-block;margin-bottom:.6rem}
+  .finding .fix{background:var(--ok-bg);border:1px solid var(--ok-bd);border-radius:6px;padding:.6rem .9rem;font-size:.85rem;color:#166534;margin-top:.6rem}
+  .finding .fix b{color:#15803d}
+
+  .badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .b-crit{background:var(--crit);color:#fff}
+  .b-high{background:var(--high);color:#fff}
+  .b-med{background:var(--med);color:#fff}
+  .b-low{background:var(--low);color:#fff}
+  .b-cat{background:var(--g100);color:var(--g600);text-transform:none;font-weight:600;letter-spacing:0}
+
+  code{font-family:var(--mono);font-size:.84em;background:var(--g100);border-radius:4px;padding:1px 6px;color:#b91c1c}
+  pre{font-family:var(--mono);font-size:.8rem;background:var(--g900);color:#e2e8f0;border-radius:8px;padding:1rem 1.25rem;overflow-x:auto;line-height:1.65;margin:.6rem 0}
+  pre .cm{color:#6b7280;font-style:italic} pre .hl{color:#fca5a5}
+
+  .toc{background:#fff;border-radius:10px;box-shadow:var(--shadow);padding:1.5rem;margin-bottom:2.5rem}
+  .toc h3{margin-bottom:.75rem;font-size:1rem;color:var(--g800)}
+  .toc ul{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem .6rem}
+  .toc a{font-size:.83rem;padding:3px 12px;border-radius:20px;text-decoration:none;background:var(--g100);color:var(--g700)}
+  .toc a:hover{background:var(--g200)}
+
+  table{width:100%;border-collapse:collapse;font-size:.85rem;background:#fff;border-radius:8px;overflow:hidden;box-shadow:var(--shadow)}
+  th{text-align:left;padding:.6rem 1rem;background:var(--g100);color:var(--g700);font-weight:600}
+  td{padding:.55rem 1rem;border-top:1px solid var(--g100);color:var(--g700)}
+  .tbl-wrap{overflow-x:auto}
+
+  .ok-card{background:var(--ok-bg);border:1px solid var(--ok-bd);border-radius:10px;padding:1.5rem}
+  .ok-card ul{list-style:none}
+  .ok-card li{padding:.35rem 0 .35rem 1.75rem;position:relative;font-size:.88rem;color:#166534}
+  .ok-card li::before{content:'✓';position:absolute;left:0;color:var(--ok);font-weight:800}
+
+  .callout{background:#fff;border-radius:10px;box-shadow:var(--shadow);padding:1.5rem;border-left:5px solid var(--crit)}
+
+  footer{text-align:center;padding:2rem;font-size:.82rem;color:var(--g500);border-top:1px solid var(--g200);margin-top:3rem}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">🔍 代码审计</div>
+  <a href="#summary">概览</a>
+  <a href="#critical">严重</a>
+  <a href="#high">高</a>
+  <a href="#medium">中</a>
+  <a href="#low">低</a>
+  <a href="#verified">已验证正确</a>
+  <a href="#priority">修复优先级</a>
+  <div class="spacer"></div>
+  <span style="font-size:.8rem;color:#9ca3af">已实证核验</span>
+</nav>
+
+<main>
+
+  <div class="hero">
+    <h1>Python Complexity Analyzer — 代码审计报告</h1>
+    <p class="sub">对后端分析引擎、FastAPI 服务、CLI、React 前端及项目配置的全面安全与质量审计</p>
+    <div class="chips">
+      <span class="chip">28 项发现</span>
+      <span class="chip">4 严重</span>
+      <span class="chip">8 高危</span>
+      <span class="chip">实证核验（非臆测）</span>
+      <span class="chip">含修复建议</span>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <section id="summary">
+    <h2 class="s-info">审计概览</h2>
+    <div class="sev-grid">
+      <div class="sev-card sc-crit"><div class="n">4</div><div class="l">严重 Critical</div></div>
+      <div class="sev-card sc-high"><div class="n">8</div><div class="l">高 High</div></div>
+      <div class="sev-card sc-med"><div class="n">9</div><div class="l">中 Medium</div></div>
+      <div class="sev-card sc-low"><div class="n">7</div><div class="l">低 Low</div></div>
+      <div class="sev-card sc-ok"><div class="n">6</div><div class="l">已验证正确</div></div>
+    </div>
+    <div class="callout">
+      <p style="margin-bottom:.5rem"><strong>核心结论：</strong>项目工程结构完整、测试充分，但存在<strong style="color:var(--crit)">若干严重安全暴露</strong>与一个会产生<strong>内部不一致输出</strong>的核心 Bug。最需优先处理的是网络层文件系统暴露（默认监听 <code>0.0.0.0</code> + 允许读取整个 <code>$HOME</code> + 无认证）和重复检测标记串扰 Bug。</p>
+      <p style="margin-bottom:0">所有发现均经过实际代码阅读与运行验证：测试数实测 <strong>247</strong>（README 称 219）、无 <code>.github/</code> CI 目录、无运行时 <code>requirements.txt</code>、<code>0.0.0.0</code> 绑定与 <code>urllib</code> NameError 均已确认。</p>
+    </div>
+  </section>
+
+  <div class="toc">
+    <h3>问题分类导航</h3>
+    <ul>
+      <li><a href="#critical">🔴 严重 (4)</a></li>
+      <li><a href="#high">🟠 高危 (8)</a></li>
+      <li><a href="#medium">🟡 中等 (9)</a></li>
+      <li><a href="#low">🔵 低 (7)</a></li>
+      <li><a href="#verified">🟢 已验证正确 (6)</a></li>
+      <li><a href="#priority">⭐ 修复优先级</a></li>
+    </ul>
+  </div>
+
+  <!-- CRITICAL -->
+  <section id="critical">
+    <h2>🔴 严重问题 (Critical)</h2>
+
+    <div class="finding f-crit">
+      <div class="head">
+        <span class="id">C-1</span>
+        <span class="title">网络层文件系统暴露：默认监听 0.0.0.0 + 可读整个 $HOME + 无认证</span>
+        <span class="badge b-crit">Critical</span><span class="badge b-cat">Security</span>
+      </div>
+      <div class="body">
+        <span class="loc">cli/analyze.py:104 · backend/api/main.py:38-40</span>
+        <p>三个问题叠加构成可被网络直接利用的高危链路：</p>
+        <pre><span class="cm"># cli/analyze.py:104 — 绑定所有网卡（用户提示却写的是 localhost）</span>
+kwargs={"app":"backend.api.main:app", <span class="hl">"host":"0.0.0.0"</span>, "port":port, ...}
+
+<span class="cm"># main.py:38-40 — 默认允许分析整个 home 目录</span>
+_ALLOWED_BASE = Path(os.environ.get("ALLOWED_BASE_DIR", <span class="hl">Path.home()</span>)).resolve()</pre>
+        <p>所有接口<strong>无任何认证</strong>。任意局域网内的客户端均可提交分析请求，读取 <code>$HOME</code> 下全部 Python 文件内容（含 dotfiles、脚本中的凭据等），并通过分析结果 / HTML 报告回传。</p>
+        <div class="fix"><b>修复：</b>默认绑定 <code>127.0.0.1</code>；<code>ALLOWED_BASE_DIR</code> 默认收窄到被分析项目目录本身而非 home；为接口增加认证（如 token）。</div>
+      </div>
+    </div>
+
+    <div class="finding f-crit">
+      <div class="head">
+        <span class="id">C-2</span>
+        <span class="title">重复检测标记串扰：同名 qualname 导致 is_duplicate 互相覆盖</span>
+        <span class="badge b-crit">Critical</span><span class="badge b-cat">Bug / 正确性</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/analyzer/core.py:160-166</span>
+        <pre>fn_lookup = {f"{fn.file}::{fn.qualname}": fn.is_duplicate for fn in all_functions}
+for fi in file_infos:
+    for fn_dict in fi["functions"]:
+        key = f"{fi['relative_path']}::{fn_dict['qualname']}"
+        fn_dict["is_duplicate"] = fn_lookup.get(key, False)</pre>
+        <p><code>qualname</code> 在同一文件内<strong>并不唯一</strong>：<code>@property</code> 与其 <code>@x.setter</code> 同为 <code>C.v</code>；<code>@overload</code> 桩函数与真实实现同名；条件重定义函数同名。字典推导只保留最后一个同名函数的值，并回写到所有同名 <code>fn_dict</code> 上。</p>
+        <p>结果：误标重复、污染喂给风险评分（<code>risk.py:71</code> 的 <code>dup_ratio</code>）和 Top 重复列表的逐文件记录。更糟的是 <code>all_functions</code>（喂给汇总计数）是正确的，<strong>导致汇总视图与逐文件视图自相矛盾</strong>。</p>
+        <div class="fix"><b>修复：</b>在 <code>detect_duplicates</code> 之后再构建 <code>_fn_to_dict</code>；或用包含 <code>line_start</code> 的唯一键 <code>f"{file}::{qualname}::{line_start}"</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-crit">
+      <div class="head">
+        <span class="id">C-3</span>
+        <span class="title">符号链接逃逸：遍历项目时跟随指向 $ALLOWED_BASE 之外的软链</span>
+        <span class="badge b-crit">Critical</span><span class="badge b-cat">Security</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/api/main.py:43-54, 122-123（守卫仅校验顶层路径）</span>
+        <p><code>_assert_safe_path</code> 只对提交的顶层路径做 <code>relative_to(_ALLOWED_BASE)</code> 校验。但 <code>analyze_project</code> 随后遍历目录树时会<strong>跟随项目内部的符号链接</strong>，遍历期间发现的文件路径未再校验。项目目录内任意一个指向 <code>/etc/passwd</code> 等位置的软链都会被读取并出现在报告中。</p>
+        <div class="fix"><b>修复：</b>对遍历过程中发现的每个文件路径（解析软链后）重新校验是否落在 <code>_ALLOWED_BASE</code> 内；或在 <code>os.walk</code> 中禁用 <code>followlinks</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-crit">
+      <div class="head">
+        <span class="id">C-4</span>
+        <span class="title">任务超时不会终止运行，且迟到完成会覆盖超时状态、耗尽线程池</span>
+        <span class="badge b-crit">Critical</span><span class="badge b-cat">Concurrency / Bug</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/api/tasks.py:285-302</span>
+        <pre>future = _executor.submit(_run)
+def _watchdog():
+    try:
+        future.result(timeout=ANALYSIS_TIMEOUT)
+    except FutureTimeoutError:
+        ... _update(task_id, status="failed", ... "exceeded ... limit")</pre>
+        <p>超时仅<strong>标记</strong>任务失败，<code>_run</code> 线程仍在执行（ThreadPoolExecutor 无法取消运行中的线程）：① 继续占用 CPU/内存与一个 worker 槽位；② 卡死的任务永久占用 worker，默认 4 个卡死即<strong>阻塞所有后续提交</strong>；③ 当 <code>_run</code> 最终完成时调用 <code>_update(status="completed")</code>，<strong>覆盖掉之前的超时失败状态</strong>（对 <code>_store</code> 与 DB 行产生竞态）。</p>
+        <div class="fix"><b>修复：</b>用 <code>ProcessPoolExecutor</code> 以便超时时杀死进程，或让 <code>analyze_project</code> 轮询取消标志；并在覆盖前检查当前状态是否已是终态。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HIGH -->
+  <section id="high">
+    <h2 class="s-high">🟠 高危问题 (High)</h2>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-1</span>
+        <span class="title">SLOC 误算：多行字符串 / docstring 内以 # 开头的行被当作注释</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">Bug / 正确性</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/analyzer/metrics.py:25-31</span>
+        <p><code>count_lines</code> 纯文本扫描，不识别字符串字面量。三引号字符串里一行 <code>exitstr = "# not a comment"</code> 或 docstring 内的 <code>#</code> 行会被误判为注释而从 SLOC 中扣除，使每个含多行字符串/docstring 的文件 SLOC 系统性偏低。</p>
+        <div class="fix"><b>修复：</b>用 <code>tokenize.generate_tokens</code> 识别真正的 <code>COMMENT</code> token 与跨行字符串；AST 在 <code>core.py:115</code> 已解析一次，可复用。</div>
+      </div>
+    </div>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-2</span>
+        <span class="title">splitlines() 在异常行分隔符上高估 LOC</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">正确性 / 健壮性</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/analyzer/metrics.py:21</span>
+        <p><code>str.splitlines()</code> 会在整套 Unicode 行边界处切分（<code>\x0b</code> 垂直制表、<code>\x0c</code> 换页、<code>\x85</code>、<code> / </code> 等），而 Python 词法分析器并不把这些当行终止符。已验证 <code>count_lines('a\x0bb')</code> 返回 <code>loc=2</code>。<code>.py</code> 中合法的换页符会膨胀 LOC 并使行计数与 AST 行号不一致。</p>
+        <div class="fix"><b>修复：</b>显式按 <code>\n</code>/<code>\r\n</code> 切分（<code>source.split("\n")</code> 后去尾随 <code>\r</code>），匹配 Python 自身的行模型。</div>
+      </div>
+    </div>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-3</span>
+        <span class="title">限流器非线程安全且无限增长（内存耗尽向量）</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">Concurrency / 内存泄漏</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/api/main.py:84, 87-101</span>
+        <p><code>_rl_store</code> 从不删除 IP 条目——每个不同客户端 IP 永久占用一个 dict 条目（无界增长）。攻击者经代理伪造/变化源 IP 即可耗尽内存。此外 <code>request.client.host</code> 是 socket 对端，置于反向代理之后会把所有客户端折叠到同一个桶。</p>
+        <div class="fix"><b>修复：</b>定期清理修剪后为空的 deque / 过期 IP；若限流可能脱离事件循环运行需加锁。</div>
+      </div>
+    </div>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-4</span>
+        <span class="title">README 声称有 GitHub Actions CI，实际无 .github/ 目录</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">Missing / 文档失实</span>
+      </div>
+      <div class="body">
+        <span class="loc">仓库根（无 .github/）· README.md:22, 344-346</span>
+        <p>已确认仓库<strong>无任何 workflow 文件</strong>。README 却描述 "Python 3.10/3.11/3.12 矩阵 + ≥70% 覆盖率门控" 以及对 <code>main</code>、<code>feature/**</code>、<code>claude/**</code> 的推送触发。项目被宣传为 CI 门控但零自动化。</p>
+        <div class="fix"><b>修复：</b>新增 <code>.github/workflows/ci.yml</code> 实现所述矩阵 + 覆盖率门控；否则从 README 删除 CI 声明。</div>
+      </div>
+    </div>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-5</span>
+        <span class="title">缺少运行时 requirements.txt，安装命令手敲且依赖标注有误</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">Missing / Config</span>
+      </div>
+      <div class="body">
+        <span class="loc">仓库根（仅有 requirements-dev.txt）· README.md:90</span>
+        <p>无 <code>requirements.txt</code> / <code>pyproject.toml</code> 锁定运行时依赖，安装靠手敲 <code>pip install "fastapi>=0.100" ... httpx</code>，且其中 <code>httpx</code> 实为<strong>测试依赖</strong>（已在 dev 文件中）。无版本锁定，可复现性无保证。</p>
+        <div class="fix"><b>修复：</b>新增 <code>requirements.txt</code>（fastapi、uvicorn、pydantic、networkx）并改用 <code>pip install -r</code>；从运行时安装行去掉 <code>httpx</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-6</span>
+        <span class="title">前端无 Error Boundary，渲染异常导致整页白屏</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">健壮性</span>
+      </div>
+      <div class="body">
+        <span class="loc">frontend/src/（全局无 componentDidCatch/ErrorBoundary）</span>
+        <p>懒加载页面直接基于 <code>result</code> 渲染 ECharts。任何渲染期异常（畸形 payload、ECharts option 错误、chunk 加载失败）都会卸载整个应用、只在 console 留错，无任何降级 UI。</p>
+        <div class="fix"><b>修复：</b>用错误边界组件包裹 <code>&lt;App/&gt;</code>（或至少 <code>&lt;Suspense&gt;/&lt;Routes&gt;</code> 块），渲染可恢复的错误面板。</div>
+      </div>
+    </div>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-7</span>
+        <span class="title">SQLite 单连接跨线程共享，设计正确但脆弱</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">Concurrency</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/api/tasks.py:50, 59</span>
+        <p>单个 <code>check_same_thread=False</code> 连接被线程池 worker、看门狗线程与事件循环共享。当前所有访问都经 <code>_db_lock</code> 串行化（正确），但 <code>_db_init()</code> 在导入时未加锁（依赖单线程导入这一隐含前提）。整体可用但脆弱，无 SQL 注入（全部参数化）。</p>
+        <div class="fix"><b>修复：</b>考虑每线程连接池或 <code>isolation_level=None</code>，并显式记录"全部 DB 访问必须持锁"的约束。</div>
+      </div>
+    </div>
+
+    <div class="finding f-high">
+      <div class="head">
+        <span class="id">H-8</span>
+        <span class="title">WebSocket 队列泄漏 / 终态竞态：客户端可能永远收不到终态事件</span>
+        <span class="badge b-high">High</span><span class="badge b-cat">Concurrency / 内存泄漏</span>
+      </div>
+      <div class="body">
+        <span class="loc">backend/api/main.py:200-215 · tasks.py:209-214, 226-230</span>
+        <p>存在竞态窗口：<code>ws_progress</code> 在 <code>get_task</code> 返回非终态后、<code>subscribe_ws</code> 之前，任务可能完成并被 <code>_update</code> 弹出 <code>_ws_queues[task_id]</code>。订阅者随后注册的队列无人投喂、无人弹出，客户端将<strong>永远收不到终态</strong>，仅靠 30s 心跳维持直至断开。</p>
+        <div class="fix"><b>修复：</b><code>subscribe_ws</code> 后重新检查任务状态（若已终态则补发终态并关闭）；终态时先向现存队列推送终态再让订阅者自行退订，而非直接 <code>pop</code> 整个队列列表。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MEDIUM -->
+  <section id="medium">
+    <h2 class="s-med">🟡 中等问题 (Medium)</h2>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-1</span>
+        <span class="title">match/case 复杂度：通配 case _ 被错误 +1，纯 guard 未计入</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">正确性</span></div>
+      <div class="body">
+        <span class="loc">backend/analyzer/complexity.py:69-74</span>
+        <p><code>self.count += len(node.cases)</code>：(a) <code>case _:</code> 通配相当于 <code>else</code>（不应计分）却 +1，高估；(b) <code>case X if y:</code> 的纯 guard 不含 <code>If/BoolOp</code> 节点，未加任何复杂度，与 <code>if/elif</code> 模型不一致。</p>
+        <div class="fix"><b>修复：</b>计 <code>len(cases)</code> 时排除尾部通配 arm，并对每个 <code>case.guard is not None</code> 额外 +1。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-2</span>
+        <span class="title">风险评分用文件"平均"CC，掩盖单点热点</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">正确性（设计）</span></div>
+      <div class="body">
+        <span class="loc">backend/analyzer/risk.py:55, 58, 75</span>
+        <p>一个含 1 个 CC-40 巨兽函数 + 30 个 CC-1 平凡函数的文件，<code>complexity_avg ≈ 2.3</code>，被评为低风险。大文件中的单个糟糕函数在 CC 与 HCC 两个维度都被稀释。</p>
+        <div class="fix"><b>修复：</b>将已计算的 <code>complexity_max</code>（<code>core.py:150</code>）纳入复杂度评分项。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-3</span>
+        <span class="title">CLI 浏览器打开分支永远不执行（urllib NameError）</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">Bug</span></div>
+      <div class="body">
+        <span class="loc">cli/analyze.py:111, 157</span>
+        <pre>import urllib.request as <span class="hl">urlreq</span>, urllib.error as urlerr   <span class="cm"># 111</span>
+...
+<span class="hl">urllib.request</span>.urlopen(frontend_url, timeout=1)            <span class="cm"># 157 → NameError</span></pre>
+        <p><code>urllib</code> 从未作为裸模块导入。第 157 行抛 <code>NameError</code>，被外层 <code>except Exception</code> 静默吞掉——"前端在运行，打开浏览器"分支<strong>永远无法执行</strong>，用户即便前端已运行也只会看到"前端未运行"。</p>
+        <div class="fix"><b>修复：</b>改为 <code>urlreq.urlopen(frontend_url, timeout=1)</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-4</span>
+        <span class="title">Dashboard 在 risk_score 缺失时错误显示红色 "F" 评级</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">Bug</span></div>
+      <div class="body">
+        <span class="loc">frontend/src/pages/Dashboard.jsx:109-112</span>
+        <p>若 <code>s.risk_score</code> 为 <code>undefined/null</code>，所有 <code>&lt;</code> 比较为假，<code>grade</code> 落到 <strong>"F"</strong>，把"数据缺失"显示成刺眼的红色 F。相邻卡片都用了 <code>?? "–"</code> 兜底，唯独此处没有。</p>
+        <div class="fix"><b>修复：</b>先判空 <code>const grade = s.risk_score == null ? "–" : ...</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-5</span>
+        <span class="title">AnalyzeRequest.project_path 无任何校验（空串/NUL 字节）</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">输入校验缺失</span></div>
+      <div class="body">
+        <span class="loc">backend/api/models.py:8-10</span>
+        <p>无长度限制、无空判断、无 NUL 字节拒绝。空串解析为 cwd（静默分析服务器工作目录）；含 NUL 字节会在处理器深处抛 <code>ValueError</code> 而非干净的 422。</p>
+        <div class="fix"><b>修复：</b><code>project_path: str = Field(min_length=1)</code>，并在校验器中拒绝 <code>"\x00"</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-6</span>
+        <span class="title">README 测试数量错误（声称 219，实测 247）</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">文档失实</span></div>
+      <div class="body">
+        <span class="loc">README.md:50, 331</span>
+        <p><code>grep -rc "def test_" tests/</code> 实测为 <strong>247</strong>，README 两处均写 219。</p>
+        <div class="fix"><b>修复：</b>两处更新为 247，或改用非具体措辞。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-7</span>
+        <span class="title">每个文件 AST 被多次遍历（class 计数冗余 walk）</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">性能</span></div>
+      <div class="body">
+        <span class="loc">backend/analyzer/core.py:147, 261</span>
+        <p><code>extract_functions</code>、<code>parse_imports</code> 各遍历一次，<code>_count_classes</code> 又做第三次完整 <code>ast.walk</code>。class 计数完全可在 <code>_FuncExtractor</code> 单趟遍历中收集（它已访问 <code>ClassDef</code>）。</p>
+        <div class="fix"><b>修复：</b>在已有的单趟访问器里顺带统计 class 数，去掉独立 <code>ast.walk</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-8</span>
+        <span class="title">生成产物 project_report.html 被提交进版本库</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">Config / 异味</span></div>
+      <div class="body">
+        <span class="loc">project_report.html（commit 500f514，~50KB）</span>
+        <p>这是工具自身的输出格式（生成产物），被签入仓库，属构建产物而非源码，会膨胀仓库并很快过时。<code>.gitignore</code> 已正确排除 <code>tasks.db*</code> 与 <code>node_modules</code>，但此产物漏网。</p>
+        <div class="fix"><b>修复：</b><code>git rm --cached project_report.html</code> 并加入 <code>.gitignore</code>；若有意保留为样例则重命名 <code>sample_report.html</code> 并在 README 注明。</div>
+      </div>
+    </div>
+
+    <div class="finding f-med">
+      <div class="head"><span class="id">M-9</span>
+        <span class="title">进度更新不落库：崩溃后任务永久卡在 pending</span>
+        <span class="badge b-med">Medium</span><span class="badge b-cat">健壮性</span></div>
+      <div class="body">
+        <span class="loc">backend/api/tasks.py:209-211</span>
+        <p>仅终态写 DB，中间进度不持久化。分析中途崩溃会在 DB 留下一条永远不更新的 <code>pending</code> 行，无可恢复状态。</p>
+        <div class="fix"><b>修复：</b>启动时将残留的非终态行标记为 failed/interrupted，或周期性持久化进度。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOW -->
+  <section id="low">
+    <h2 class="s-low">🔵 低优先级问题 (Low)</h2>
+
+    <div class="finding f-low">
+      <div class="head"><span class="id">L-1</span>
+        <span class="title">MD5 用于哈希：触发安全 linter，FIPS 模式下崩溃</span>
+        <span class="badge b-low">Low</span><span class="badge b-cat">异味 / 健壮性</span></div>
+      <div class="body">
+        <span class="loc">backend/analyzer/functions.py:46-49</span>
+        <p>MD5 在 FIPS 模式系统上 <code>hashlib.md5()</code> 会抛 <code>ValueError</code> 致整个分析崩溃，并被 Bandit (B303/B324) 标记。</p>
+        <div class="fix"><b>修复：</b>改用 <code>hashlib.sha256(...)</code>，或传 <code>usedforsecurity=False</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-low">
+      <div class="head"><span class="id">L-2</span>
+        <span class="title">函数体归一化折叠缩进，产生误报重复</span>
+        <span class="badge b-low">Low</span><span class="badge b-cat">正确性</span></div>
+      <div class="body">
+        <span class="loc">backend/analyzer/functions.py:47-48</span>
+        <p><code>" ".join(body.split())</code> 折叠包括缩进在内的所有空白。Python 仅靠缩进区分的两个不同块结构会被归一化为相同字符串、误判重复（受 <code>loc>5</code> 过滤后较罕见）。</p>
+        <div class="fix"><b>修复：</b>归一化时保留结构性缩进，或基于 AST dump 而非纯文本做哈希。</div>
+      </div>
+    </div>
+
+    <div class="finding f-low">
+      <div class="head"><span class="id">L-3</span>
+        <span class="title">宽泛 except Exception 吞掉读取与图分析的真实错误</span>
+        <span class="badge b-low">Low</span><span class="badge b-cat">健壮性</span></div>
+      <div class="body">
+        <span class="loc">backend/analyzer/core.py:32 · dependencies.py:204</span>
+        <p><code>_safe_read</code> 已用 <code>errors="replace"</code>，真正异常只剩 <code>OSError/PermissionError</code>，应精确捕获以免把真 bug 静默成 read_error；<code>nx.simple_cycles</code> 的裸捕获会掩盖编程错误。</p>
+        <div class="fix"><b>修复：</b>收窄两处 except 子句。</div>
+      </div>
+    </div>
+
+    <div class="finding f-low">
+      <div class="head"><span class="id">L-4</span>
+        <span class="title">注解覆盖率对 __init__ 的返回槽不公平惩罚</span>
+        <span class="badge b-low">Low</span><span class="badge b-cat">正确性（轻微）</span></div>
+      <div class="body">
+        <span class="loc">backend/analyzer/core.py:36-39</span>
+        <p><code>_fn_annotation_rate</code> 总为"返回槽" +1，<code>__init__(self)</code> 无返回注解意义却报 <code>0/1=0.0</code>，拉低文件/项目注解覆盖率。</p>
+        <div class="fix"><b>修复：</b>对 <code>__init__</code>/setter 不计返回槽，或文档说明此选择。</div>
+      </div>
+    </div>
+
+    <div class="finding f-low">
+      <div class="head"><span class="id">L-5</span>
+        <span class="title">HTML 报告数值单元格未转义（纵深防御缺口）</span>
+        <span class="badge b-low">Low</span><span class="badge b-cat">Security</span></div>
+      <div class="body">
+        <span class="loc">backend/api/report.py:96-99, 119 等</span>
+        <p>未发现实际 XSS（字符串字段均经 <code>html.escape</code>，<code>&lt;/script&gt;</code> 嵌入也有 <code>&lt;\/</code> 防护）。但数值字段（<code>cc</code>、<code>n_params</code>、<code>loc</code> 等）直接插值未转义/未强制类型；当前来源可信，仅作纵深防御缺口记录。</p>
+        <div class="fix"><b>修复：</b>对这些数值单元格强制 <code>int()</code> 或一并 <code>_esc</code>。</div>
+      </div>
+    </div>
+
+    <div class="finding f-low">
+      <div class="head"><span class="id">L-6</span>
+        <span class="title">前端无 ESLint / lint 脚本，useEffect 依赖项有省略</span>
+        <span class="badge b-low">Low</span><span class="badge b-cat">Missing / 异味</span></div>
+      <div class="body">
+        <span class="loc">frontend/package.json:5-9 · App.jsx 多处 useEffect</span>
+        <p>仅有 dev/build/preview 脚本，无 ESLint 与 <code>eslint-plugin-react-hooks</code>。多处 <code>useEffect</code> 故意省略依赖（功能上当前正确，但 <code>ProgressScreen</code> 省略 <code>t</code> 导致切换语言时错误文案不重译）。</p>
+        <div class="fix"><b>修复：</b>引入 ESLint + react-hooks 插件并加 <code>lint</code> 脚本。</div>
+      </div>
+    </div>
+
+    <div class="finding f-low">
+      <div class="head"><span class="id">L-7</span>
+        <span class="title">await websocket.close() 在 finally 中可能对已关闭连接抛错</span>
+        <span class="badge b-low">Low</span><span class="badge b-cat">健壮性</span></div>
+      <div class="body">
+        <span class="loc">backend/api/main.py:213-215</span>
+        <p>客户端已断开（捕获 <code>WebSocketDisconnect</code>）后再次 <code>close()</code> 可能抛 <code>RuntimeError</code> 并逸出处理器。</p>
+        <div class="fix"><b>修复：</b>用 try/except 包裹 <code>await websocket.close()</code>。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VERIFIED OK -->
+  <section id="verified">
+    <h2 class="s-ok">🟢 已验证正确（非问题）</h2>
+    <div class="ok-card">
+      <ul>
+        <li><strong>除零保护齐全：</strong><code>core.py:132/149/213/216/219</code>、<code>risk.py:40/72-73</code> 均有守卫；<code>_normalize</code> 在 <code>hi&le;lo</code> 时正确返回 0.0。</li>
+        <li><strong>布尔/推导复杂度计数正确：</strong><code>a and b and c</code> → +2、推导式 <code>if</code> 计数已实测 CC 值正确。</li>
+        <li><strong>无 SQL 注入：</strong>所有 SQLite 查询均参数化。</li>
+        <li><strong>无实际 XSS：</strong>字符串字段全经 <code>html.escape</code>，JSON 嵌入有 <code>&lt;\/</code> 越界防护。</li>
+        <li><strong>前端 WS/定时器清理正确：</strong><code>ProgressScreen</code> 卸载时关闭 WS、清除轮询，并用 <code>mounted</code> 标志守卫所有 setState，无泄漏。列表 <code>key</code> 均稳定。</li>
+        <li><strong>配置卫生良好：</strong><code>.gitignore</code> 完整（排除 <code>tasks.db*</code>、<code>node_modules</code>）；<code>package-lock.json</code> 已提交；LICENSE 存在；i18n 中英键数一致（各 143）；API URL 已通过 <code>VITE_API_BASE</code> 外部化。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- PRIORITY -->
+  <section id="priority">
+    <h2 class="s-info">⭐ 修复优先级建议</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>顺序</th><th>编号</th><th>问题</th><th>理由</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge b-crit">1</span></td><td>C-1 / C-3</td><td>锁定默认绑定为 127.0.0.1、收窄 ALLOWED_BASE、遍历时校验软链</td><td>当前将整个 $HOME 暴露给网络，最高危</td></tr>
+          <tr><td><span class="badge b-crit">2</span></td><td>C-2</td><td>修复重复检测标记串扰</td><td>产生错误且自相矛盾的分析输出</td></tr>
+          <tr><td><span class="badge b-crit">3</span></td><td>C-4</td><td>超时改用进程池 / 取消标志，并防终态被覆盖</td><td>卡死任务会耗尽线程池、状态错乱</td></tr>
+          <tr><td><span class="badge b-high">4</span></td><td>H-1</td><td>SLOC 改用 tokenize 精确分类</td><td>影响每个含 docstring 的文件度量准确性</td></tr>
+          <tr><td><span class="badge b-high">5</span></td><td>H-3</td><td>限流器清理过期 IP</td><td>无界增长 = DoS 向量</td></tr>
+          <tr><td><span class="badge b-high">6</span></td><td>H-4 / H-5 / M-6</td><td>补 CI、加 requirements.txt、修正测试数</td><td>消除"宣传与实际不符"，保证可复现</td></tr>
+          <tr><td><span class="badge b-med">7</span></td><td>M-3 / M-4 / M-8</td><td>修 urllib NameError、Dashboard 错误评级、移除提交的产物</td><td>快速可见的小修复</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div>Python Complexity Analyzer — 代码审计报告 · 28 项发现（4 严重 / 8 高 / 9 中 / 7 低）+ 6 项验证正确</div>
+  <div style="margin-top:.4rem">所有发现均经实际代码阅读与运行验证 · 生成于 2026-06-04</div>
+</footer>
+
+</body>
+</html>
