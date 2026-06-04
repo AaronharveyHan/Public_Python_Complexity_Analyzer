@@ -354,3 +354,86 @@ class TestRateLimiter:
         main_mod._rate_limit_check("newcomer")  # hits cap → forced sweep clears stale
         assert "newcomer" in main_mod._rl_store
         assert len(main_mod._rl_store) <= main_mod._RL_MAX_CLIENTS
+
+
+# ── WebSocket /ws/{task_id} ─────────────────────────────────────────────────────
+
+class TestWebSocketEndpoint:
+    def _processing_task(self):
+        task_id = tasks_mod.create_task("/tmp/x")
+        tasks_mod._store[task_id] = tasks_mod.TaskStatus(
+            task_id=task_id, status="processing", progress=50, message="working"
+        )
+        return task_id
+
+    def test_unknown_task_reports_error(self, client):
+        with client.websocket_connect("/ws/does-not-exist") as ws:
+            assert ws.receive_json() == {"error": "Task not found"}
+
+    def test_already_completed_task_sends_terminal_and_closes(self, client):
+        task_id = tasks_mod.create_task("/tmp/x")
+        tasks_mod._store[task_id] = tasks_mod.TaskStatus(
+            task_id=task_id, status="completed", progress=100,
+            message="Done", result={"ok": True},
+        )
+        with client.websocket_connect(f"/ws/{task_id}") as ws:
+            msg = ws.receive_json()
+            assert msg["status"] == "completed"
+            assert msg["progress"] == 100
+
+    def test_terminal_during_subscribe_window_is_delivered(self, client, monkeypatch):
+        """H-8 regression: if the task finishes between the status snapshot and
+        subscribe_ws(), the terminal state must still reach the client (not hang)."""
+        task_id = self._processing_task()
+        real_subscribe = tasks_mod.subscribe_ws
+
+        def racing_subscribe(tid):
+            # Faithfully reproduce the race: the analysis completes (pushing its
+            # terminal event and popping _ws_queues) right as we subscribe.
+            tasks_mod._update(
+                tid, status="completed", progress=100,
+                message="Done", result={"ok": True},
+            )
+            return real_subscribe(tid)
+
+        monkeypatch.setattr(main_mod, "subscribe_ws", racing_subscribe)
+
+        with client.websocket_connect(f"/ws/{task_id}") as ws:
+            statuses = []
+            for _ in range(3):
+                msg = ws.receive_json()
+                statuses.append(msg.get("status"))
+                if msg.get("status") in ("completed", "failed"):
+                    break
+            # Without the post-subscribe re-check the client would only ever see
+            # the "processing" snapshot then heartbeats — never "completed".
+            assert "completed" in statuses
+
+    def test_late_subscriber_does_not_leak_empty_queue_list(self, client):
+        """unsubscribe_ws must drop the empty list a late subscriber re-creates."""
+        task_id = tasks_mod.create_task("/tmp/x")
+        tasks_mod._store[task_id] = tasks_mod.TaskStatus(
+            task_id=task_id, status="processing", progress=10, message="working"
+        )
+        real_subscribe = tasks_mod.subscribe_ws
+
+        def racing_subscribe(tid):
+            tasks_mod._update(tid, status="completed", progress=100, message="Done",
+                              result={"ok": True})
+            return real_subscribe(tid)
+
+        import backend.api.main as m
+        orig = m.subscribe_ws
+        m.subscribe_ws = racing_subscribe
+        try:
+            with client.websocket_connect(f"/ws/{task_id}") as ws:
+                ws.receive_json()  # processing snapshot
+                # drain until terminal / close
+                try:
+                    while ws.receive_json().get("status") not in ("completed", "failed"):
+                        pass
+                except Exception:
+                    pass
+        finally:
+            m.subscribe_ws = orig
+        assert task_id not in tasks_mod._ws_queues

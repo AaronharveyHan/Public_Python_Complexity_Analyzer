@@ -248,6 +248,11 @@ def unsubscribe_ws(task_id: str, q: asyncio.Queue) -> None:
             qs.remove(q)
         except ValueError:
             pass
+        # Drop the now-empty list so a late subscriber on an already-terminal
+        # task (which re-creates the entry after _update popped it) doesn't
+        # leak an empty list per task forever.
+        if not qs:
+            _ws_queues.pop(task_id, None)
 
 
 # ── Run analysis in background thread ────────────────────────────────────────

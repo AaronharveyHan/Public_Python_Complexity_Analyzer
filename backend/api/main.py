@@ -280,6 +280,25 @@ async def ws_progress(websocket: WebSocket, task_id: str) -> None:
 
     queue = subscribe_ws(task_id)
     try:
+        # Re-check after subscribing to close a race: the task may have reached
+        # a terminal state in the window between the snapshot above and
+        # subscribe_ws(). In that case its terminal event was pushed to the
+        # subscriber list *before* our queue existed (and the list was then
+        # discarded), so the event never lands in our queue and we would block
+        # forever on heartbeats. Surfacing the final state here covers the gap;
+        # if the task is still running, the live event stream takes over below.
+        task = get_task(task_id)
+        if task is not None and task.status in ("completed", "failed"):
+            final_state = {
+                "task_id":  task.task_id,
+                "status":   task.status,
+                "progress": task.progress,
+                "message":  task.message,
+            }
+            if task.status == "failed" and task.error:
+                final_state["error"] = task.error.rstrip().rsplit("\n", 1)[-1]
+            await websocket.send_json(final_state)
+            return
         while True:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=30)
