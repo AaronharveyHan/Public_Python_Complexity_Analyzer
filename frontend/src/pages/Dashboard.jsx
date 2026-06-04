@@ -106,7 +106,11 @@ export default function Dashboard({ result }) {
     }],
   }), [ccDist]);
 
-  const grade = s.risk_score < 20 ? "A"
+  // Guard against a missing/non-numeric risk_score: without this an
+  // `undefined` score makes every comparison false and falls through to "F",
+  // mislabelling a project with no data as the worst grade. Treat it as N/A.
+  const grade = !Number.isFinite(s.risk_score) ? "–"
+              : s.risk_score < 20 ? "A"
               : s.risk_score < 40 ? "B"
               : s.risk_score < 60 ? "C"
               : s.risk_score < 80 ? "D" : "F";

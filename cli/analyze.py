@@ -170,7 +170,7 @@ def _run_web(project_path: str, port: int, ignore_dirs: list[str] | None) -> Non
     frontend_url = f"http://localhost:5173"
     # Check if frontend dev server is already running; otherwise suggest npm run dev
     try:
-        urllib.request.urlopen(frontend_url, timeout=1)
+        urlreq.urlopen(frontend_url, timeout=1)
         webbrowser.open(frontend_url)
         print(f"  Browser opened: {frontend_url}")
     except Exception:
