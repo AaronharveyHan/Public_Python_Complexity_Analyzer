@@ -288,3 +288,17 @@ class TestDetectDuplicates:
         fns_b = extract_functions(src2, "b.py")
         # Both hashes normalize whitespace, so they match
         assert fns_a[0].body_hash == fns_b[0].body_hash
+
+    def test_renamed_function_still_detected_as_duplicate(self):
+        src1 = "def foo():\n    x = 1\n    return x + 1"
+        src2 = "def bar():\n    x = 1\n    return x + 1"
+        fns_a = extract_functions(src1, "a.py")
+        fns_b = extract_functions(src2, "b.py")
+        assert fns_a[0].body_hash == fns_b[0].body_hash
+
+    def test_comment_difference_still_duplicate(self):
+        src1 = "def foo():\n    x = 1\n    return x + 1"
+        src2 = "def foo():\n    # explain x\n    x = 1\n    return x + 1  # done"
+        fns_a = extract_functions(src1, "a.py")
+        fns_b = extract_functions(src2, "b.py")
+        assert fns_a[0].body_hash == fns_b[0].body_hash

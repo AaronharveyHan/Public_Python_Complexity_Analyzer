@@ -251,3 +251,48 @@ class TestMatchStatement:
         )
         # base(1) + 2 cases + 1 if = 4
         assert _compute_cc(_func_node(src)) == 4
+
+
+class TestNestedDefs:
+    def test_nested_function_not_double_counted(self):
+        # Outer's own decision point (the if) should count once; the
+        # nested function's two ifs belong to its own CC, not the outer's.
+        src = (
+            "def outer(x):\n"
+            "    if x:\n"
+            "        pass\n"
+            "    def inner(y):\n"
+            "        if y:\n"
+            "            pass\n"
+            "        if y:\n"
+            "            pass\n"
+            "    return inner\n"
+        )
+        assert _compute_cc(_func_node(src)) == 2  # base(1) + outer's if
+
+    def test_nested_async_function_not_double_counted(self):
+        src = (
+            "def outer(x):\n"
+            "    async def inner(y):\n"
+            "        if y:\n"
+            "            pass\n"
+            "    return inner\n"
+        )
+        assert _compute_cc(_func_node(src)) == 1  # nested if belongs to inner
+
+    def test_lambda_decision_points_still_counted(self):
+        # Lambdas aren't extracted as separate functions, so their internal
+        # decision points must still be attributed to the enclosing function.
+        src = "def foo(x):\n    f = lambda y: 1 if y else 0\n    return f\n"
+        assert _compute_cc(_func_node(src)) == 2  # base(1) + ternary in lambda
+
+    def test_nested_class_methods_not_double_counted(self):
+        src = (
+            "def outer(x):\n"
+            "    class Inner:\n"
+            "        def method(self, y):\n"
+            "            if y:\n"
+            "                pass\n"
+            "    return Inner\n"
+        )
+        assert _compute_cc(_func_node(src)) == 1  # method's if belongs to method

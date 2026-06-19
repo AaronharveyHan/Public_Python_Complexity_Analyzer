@@ -29,6 +29,13 @@ class _CCVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.count = 1  # base complexity
 
+    # ── nested defs: counted separately, don't descend ────────────────────
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        pass
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        pass
+
     # ── hard decision points ──────────────────────────────────────────────
     def visit_If(self, node: ast.If) -> None:
         self.count += 1
@@ -76,7 +83,11 @@ class _CCVisitor(ast.NodeVisitor):
 
 def _compute_cc(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     v = _CCVisitor()
-    v.visit(func_node)
+    # Visit children directly: func_node itself is a FunctionDef/AsyncFunctionDef,
+    # and visit() would dispatch to the no-op nested-def handler below, which
+    # exists to stop recursion into *nested* defs (counted separately) and
+    # would otherwise also discard the root function's own body.
+    v.generic_visit(func_node)
     return v.count
 
 

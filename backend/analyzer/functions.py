@@ -36,11 +36,14 @@ class FunctionDetail:
     duplicate_of: str = ""     # qualname of original
 
 
-def _extract_body_source(source_lines: list[str],
-                         node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
-    start = node.lineno - 1
-    end   = getattr(node, "end_lineno", node.lineno)
-    return "\n".join(source_lines[start:end])
+def _extract_body_source(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """Render only the function's body statements.
+
+    Excludes the ``def`` line (name, decorators, parameter list) and
+    comments (not part of the AST), so renaming a function or its
+    parameters, or editing comments, doesn't change its duplicate hash.
+    """
+    return "\n".join(ast.unparse(stmt) for stmt in node.body)
 
 
 def _hash_body(body: str) -> str:
@@ -50,8 +53,7 @@ def _hash_body(body: str) -> str:
 
 
 class _FuncExtractor(ast.NodeVisitor):
-    def __init__(self, source: str, rel_path: str) -> None:
-        self._lines  = source.splitlines()
+    def __init__(self, rel_path: str) -> None:
         self._path   = rel_path
         self._prefix: list[str] = []
         self.functions: list[FunctionDetail] = []
@@ -68,7 +70,7 @@ class _FuncExtractor(ast.NodeVisitor):
         end       = getattr(node, "end_lineno", node.lineno)
         loc       = end - node.lineno + 1
         cc        = _compute_cc(node)
-        body_src  = _extract_body_source(self._lines, node)
+        body_src  = _extract_body_source(node)
         body_hash = _hash_body(body_src)
         n_params  = (
             len(node.args.args)
@@ -129,7 +131,7 @@ def extract_functions(
             tree = ast.parse(source)
         except SyntaxError:
             return []
-    extractor = _FuncExtractor(source, rel_path)
+    extractor = _FuncExtractor(rel_path)
     extractor.visit(tree)
     return extractor.functions
 
