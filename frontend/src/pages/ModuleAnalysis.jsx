@@ -165,7 +165,7 @@ export default function ModuleAnalysis({ result }) {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return [...files]
-      .filter((f) => f.relative_path.toLowerCase().includes(q))
+      .filter((f) => (f.relative_path || "").toLowerCase().includes(q))
       .sort((a, b) => {
         const va = a[sortKey] ?? "";
         const vb = b[sortKey] ?? "";

@@ -29,6 +29,9 @@ function buildCCDist(files) {
   (files || []).forEach((f) =>
     (f.functions || []).forEach((fn) => {
       const cc = fn.complexity;
+      // Skip functions with missing/non-numeric complexity rather than
+      // letting every comparison fall through to the worst ("11+") bin.
+      if (!Number.isFinite(cc)) return;
       if (cc <= 1)       bins["1"]++;
       else if (cc <= 3)  bins["2-3"]++;
       else if (cc <= 6)  bins["4-6"]++;

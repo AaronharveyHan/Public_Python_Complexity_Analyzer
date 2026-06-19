@@ -1,4 +1,5 @@
 export const riskColor = (score) => {
+  if (!Number.isFinite(score)) return "#6b7280";
   if (score < 20) return "#22c55e";
   if (score < 40) return "#84cc16";
   if (score < 60) return "#eab308";
@@ -7,6 +8,7 @@ export const riskColor = (score) => {
 };
 
 export const ccColor = (cc) => {
+  if (!Number.isFinite(cc)) return "#6b7280";
   if (cc <= 5)  return "#22c55e";
   if (cc <= 10) return "#eab308";
   if (cc <= 20) return "#f97316";
