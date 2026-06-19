@@ -130,7 +130,13 @@ def _module_id(py_path: Path, root: Path) -> str:
     parts = list(rel.with_suffix("").parts)
     if parts and parts[-1] == "__init__":
         parts = parts[:-1]
-    return ".".join(parts) if parts else py_path.stem
+    if parts:
+        return ".".join(parts)
+    # A root-level __init__.py has no parts left after stripping the
+    # leaf; fall back to the project directory name rather than the
+    # literal stem "__init__", which is meaningless and collides with
+    # any other root-level __init__.py.
+    return root.name if py_path.name == "__init__.py" else py_path.stem
 
 
 def build_dependency_graph(

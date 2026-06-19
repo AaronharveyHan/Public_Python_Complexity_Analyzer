@@ -18,7 +18,7 @@ from .dependencies import (
     parse_imports, build_dependency_graph,
     graph_to_json, _module_id,
 )
-from .risk         import compute_risk_scores
+from .risk         import compute_risk_scores, module_risk_key
 
 
 ProgressCB = Callable[[int, str], None]
@@ -200,7 +200,7 @@ def analyze_project(
     risks = compute_risk_scores(file_infos)
     risk_map: dict[str, float] = {}
     for fi in file_infos:
-        mid = fi["module_id"]
+        mid = module_risk_key(fi)
         if mid in risks:
             r = risks[mid]
             fi["risk_score"]       = r.risk_score

@@ -105,6 +105,13 @@ class TestModuleId:
         f = deep / "c.py"
         assert _module_id(f, tmp_path) == "a.b.c"
 
+    def test_root_level_init_file_uses_project_name(self, tmp_path):
+        # A root __init__.py has no path parts left after stripping the
+        # leaf; it should fall back to the project dir name, not the
+        # literal stem "__init__".
+        f = tmp_path / "__init__.py"
+        assert _module_id(f, tmp_path) == tmp_path.name
+
 
 class TestBuildDependencyGraph:
     def test_empty_inputs(self, tmp_path):

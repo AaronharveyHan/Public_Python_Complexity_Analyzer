@@ -4,7 +4,13 @@ import zh from "./zh";
 
 const LANGS = { en, zh };
 
-const I18nContext = createContext(null);
+// Default value used only if useTranslation() is ever called outside an
+// I18nProvider, so callers can safely destructure { t } without a null check.
+const I18nContext = createContext({
+  t: (key) => key,
+  lang: "en",
+  setLang: () => {},
+});
 
 export function I18nProvider({ children }) {
   const [lang, setLangState] = useState(

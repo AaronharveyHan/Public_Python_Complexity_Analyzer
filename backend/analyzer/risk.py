@@ -40,6 +40,16 @@ def _normalize(value: float, lo: float, hi: float) -> float:
     return max(0.0, min(100.0, (value - lo) / (hi - lo) * 100))
 
 
+def module_risk_key(fi: dict) -> str:
+    """Key used to identify a module's risk entry.
+
+    Callers (e.g. core.py) that look up entries in the dict returned by
+    ``compute_risk_scores`` must derive their lookup key the same way, or
+    the lookup silently misses instead of raising.
+    """
+    return fi.get("module_id", fi.get("relative_path", fi["path"]))
+
+
 def compute_risk_scores(file_infos: list[dict]) -> Dict[str, ModuleRisk]:
     """
     Compute per-module risk from the list of file info dicts produced by
@@ -61,7 +71,7 @@ def compute_risk_scores(file_infos: list[dict]) -> Dict[str, ModuleRisk]:
 
     risks: Dict[str, ModuleRisk] = {}
     for fi in file_infos:
-        mid      = fi.get("module_id", fi.get("relative_path", fi["path"]))
+        mid      = module_risk_key(fi)
         cc_avg   = fi.get("complexity_avg", 0)
         loc      = fi.get("loc", 0)
         funcs    = fi.get("functions", [])

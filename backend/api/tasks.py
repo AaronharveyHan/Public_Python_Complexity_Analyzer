@@ -61,6 +61,13 @@ def _db_init() -> None:
     if path != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
     _db = sqlite3.connect(path, check_same_thread=False)
+    # `progress` has no CHECK(progress BETWEEN 0 AND 100) constraint here.
+    # The 0-100 range is enforced at the application layer (TaskStatus's
+    # Pydantic field and the clamp in _update()), so this is a missing
+    # defense-in-depth guard against direct/manual SQL writes rather than
+    # a reachable bug through the API today. Note that adding a CHECK
+    # later wouldn't retroactively apply to an existing DB file anyway,
+    # since this is CREATE TABLE IF NOT EXISTS — it would need a migration.
     _db.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             task_id    TEXT PRIMARY KEY,
@@ -218,6 +225,13 @@ def _update(task_id: str, **kwargs: Any) -> None:
 
     if terminal:
         # Persist completed/failed tasks so they survive server restarts.
+        # Note: this happens *outside* any `_lock` hold, so a concurrent
+        # reader can observe `_store` already in its terminal state while
+        # `_ws_queues`/`_cancel_events` for this task_id haven't been
+        # cleaned up yet (the second `with _lock` below). Not a deadlock
+        # risk (locks are always taken one at a time, never nested here),
+        # just a brief non-atomic window between the two `with _lock`
+        # blocks in this function.
         _db_upsert(task)
         with _lock:
             _ws_queues.pop(task_id, None)

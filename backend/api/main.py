@@ -79,7 +79,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -255,6 +255,11 @@ async def ws_progress(websocket: WebSocket, task_id: str) -> None:
     """Subscribe to real-time progress for a task."""
     # Browsers cannot set Authorization headers on a WebSocket handshake, so
     # accept the token via a query parameter:  /ws/{id}?token=<API_TOKEN>
+    # Tradeoff: query strings can end up in server access logs, proxy logs,
+    # and browser history, which is a weaker exposure profile than a header.
+    # If API_TOKEN is treated as a long-lived secret rather than a
+    # short-lived per-task ticket, consider that when deploying behind
+    # logging proxies.
     if _API_TOKEN and not _token_matches(websocket.query_params.get("token", "")):
         await websocket.close(code=1008)  # policy violation
         return

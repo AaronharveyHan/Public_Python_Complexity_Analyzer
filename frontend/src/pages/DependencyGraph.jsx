@@ -179,7 +179,7 @@ export default function DependencyGraph({ result }) {
           <div style={{ fontSize: 13, fontWeight: 600, color: "#ef4444", marginBottom: 8 }}>
             {t("depGraph.circularTitle")} ({cycles})
           </div>
-          {graph.cycles.map((c, i) => (
+          {graph.cycles.filter((c) => c?.length).map((c, i) => (
             <div key={i} style={{ fontSize: 12, color: "#fca5a5", marginBottom: 4 }}>
               {c.join(" → ")} → {c[0]}
             </div>
