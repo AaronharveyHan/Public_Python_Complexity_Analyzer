@@ -491,6 +491,13 @@ def generate_html_report(result: dict) -> str:
 (function() {{
   var DATA = {chart_data};
 
+  function escapeHtml(s) {{
+    return String(s).replace(/[&<>"']/g, function(c) {{
+      return {{ "&": "&amp;", "<": "&lt;", ">": "&gt;",
+                '"': "&quot;", "'": "&#39;" }}[c];
+    }});
+  }}
+
   // ── Risk Treemap ────────────────────────────────────────────────────────
   var treemapEl = document.getElementById("chart-treemap");
   if (treemapEl && typeof echarts !== "undefined") {{
@@ -500,7 +507,7 @@ def generate_html_report(result: dict) -> str:
       tooltip: {{
         formatter: function(p) {{
           var d = p.data;
-          return "<b>" + d.name + "</b><br/>LOC: " + d.value +
+          return "<b>" + escapeHtml(d.name) + "</b><br/>LOC: " + d.value +
                  "<br/>Risk: " + (d.risk || 0).toFixed(1);
         }}
       }},
@@ -517,7 +524,7 @@ def generate_html_report(result: dict) -> str:
         breadcrumb: {{ show: false }},
         label: {{ show: true, fontSize: 10, color: "#fff",
                   formatter: function(p) {{
-                    return p.data.name + "\\n" + "Risk:" + (p.data.risk||0).toFixed(0);
+                    return escapeHtml(p.data.name) + "\\n" + "Risk:" + (p.data.risk||0).toFixed(0);
                   }} }}
       }}]
     }});

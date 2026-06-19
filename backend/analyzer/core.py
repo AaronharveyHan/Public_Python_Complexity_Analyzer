@@ -129,49 +129,59 @@ def analyze_project(
             failed_files.append({"path": rel, "reason": "read_error"})
             continue
 
-        # Parse the AST once and reuse across all analysis steps.
         try:
-            tree: ast.AST | None = ast.parse(source)
-        except SyntaxError as exc:
+            # Parse the AST once and reuse across all analysis steps.
+            try:
+                tree: ast.AST | None = ast.parse(source)
+            except SyntaxError as exc:
+                failed_files.append({
+                    "path":   rel,
+                    "reason": "syntax_error",
+                    "detail": f"line {exc.lineno}: {exc.msg}",
+                })
+                tree = None
+
+            mid     = _module_id(fpath, root)
+            lm      = count_lines(source)
+            funcs   = extract_functions(source, rel, tree=tree)
+            imports = parse_imports(source, tree=tree, module_id=mid)
+            cc_list = [fn.complexity for fn in funcs]
+
+            # Per-file annotation rate: average across all functions
+            fn_rates = [_fn_annotation_rate(fn) for fn in funcs]
+            file_annot_rate = round(sum(fn_rates) / len(fn_rates), 3) if fn_rates else None
+
+            imports_map[mid] = imports
+            all_functions.extend(funcs)
+            per_file_funcs.append(funcs)
+
+            fi: dict = {
+                "path":            str(fpath),
+                "relative_path":   rel,
+                "module_id":       mid,
+                "loc":             lm.loc,
+                "sloc":            lm.sloc,
+                "blank":           lm.blank,
+                "comment":         lm.comment,
+                "functions":       [],   # filled after duplicate detection (below)
+                "n_functions":     len(funcs),
+                "n_classes":       _count_classes(tree),
+                "imports":         imports,
+                "complexity_avg":  round(sum(cc_list) / len(cc_list), 2) if cc_list else 0,
+                "complexity_max":  max(cc_list, default=0),
+                "annotation_rate": file_annot_rate,
+                "risk_score":      0.0,   # filled later
+            }
+            file_infos.append(fi)
+        except RecursionError:
+            # Pathologically deep nesting (e.g. generated code) can blow the
+            # AST traversal stack; skip the file rather than abort the whole
+            # analysis.
             failed_files.append({
                 "path":   rel,
-                "reason": "syntax_error",
-                "detail": f"line {exc.lineno}: {exc.msg}",
+                "reason": "recursion_error",
+                "detail": "file too deeply nested to analyse",
             })
-            tree = None
-
-        mid     = _module_id(fpath, root)
-        lm      = count_lines(source)
-        funcs   = extract_functions(source, rel, tree=tree)
-        imports = parse_imports(source, tree=tree, module_id=mid)
-        cc_list = [fn.complexity for fn in funcs]
-
-        # Per-file annotation rate: average across all functions
-        fn_rates = [_fn_annotation_rate(fn) for fn in funcs]
-        file_annot_rate = round(sum(fn_rates) / len(fn_rates), 3) if fn_rates else None
-
-        imports_map[mid] = imports
-        all_functions.extend(funcs)
-        per_file_funcs.append(funcs)
-
-        fi: dict = {
-            "path":            str(fpath),
-            "relative_path":   rel,
-            "module_id":       mid,
-            "loc":             lm.loc,
-            "sloc":            lm.sloc,
-            "blank":           lm.blank,
-            "comment":         lm.comment,
-            "functions":       [],   # filled after duplicate detection (below)
-            "n_functions":     len(funcs),
-            "n_classes":       _count_classes(tree),
-            "imports":         imports,
-            "complexity_avg":  round(sum(cc_list) / len(cc_list), 2) if cc_list else 0,
-            "complexity_max":  max(cc_list, default=0),
-            "annotation_rate": file_annot_rate,
-            "risk_score":      0.0,   # filled later
-        }
-        file_infos.append(fi)
 
     # ── 3. Duplicate detection (cross-file) ───────────────────────────────────
     _check_cancel()
