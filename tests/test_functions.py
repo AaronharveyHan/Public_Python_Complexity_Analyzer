@@ -170,6 +170,38 @@ class TestExtractFunctions:
         assert fn.n_typeable_params == 1
         assert fn.annotated_params == 0
 
+    def test_module_level_func_named_self_param_not_stripped(self):
+        # A module-level function isn't a method just because its first
+        # parameter happens to be named "self" or "cls".
+        src = "def foo(self, x: int):\n    pass"
+        funcs = extract_functions(src, "t.py")
+        fn = funcs[0]
+        assert fn.n_typeable_params == 2
+        assert fn.annotated_params == 1
+
+    def test_staticmethod_first_param_not_stripped(self):
+        # @staticmethod has no implicit self/cls; all params are typeable.
+        src = "class C:\n    @staticmethod\n    def sm(x: int, y):\n        pass"
+        funcs = extract_functions(src, "t.py")
+        fn = next(f for f in funcs if f.name == "sm")
+        assert fn.n_typeable_params == 2
+        assert fn.annotated_params == 1
+
+    def test_nested_function_inside_method_not_treated_as_method(self):
+        # A closure defined inside a method isn't itself a method, even
+        # though the enclosing scope is a class.
+        src = (
+            "class C:\n"
+            "    def method(self):\n"
+            "        def helper(self, x: int):\n"
+            "            pass\n"
+            "        return helper\n"
+        )
+        funcs = extract_functions(src, "t.py")
+        fn = next(f for f in funcs if f.name == "helper")
+        assert fn.n_typeable_params == 2
+        assert fn.annotated_params == 1
+
     def test_partial_annotation(self):
         funcs = extract_functions("def foo(a: int, b):\n    pass", "t.py")
         fn = funcs[0]

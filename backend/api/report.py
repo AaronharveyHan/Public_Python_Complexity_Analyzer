@@ -107,7 +107,7 @@ def _module_table_rows(files: list[dict]) -> str:
     sorted_files = sorted(files, key=lambda f: f.get("risk_score", 0), reverse=True)
     rows = []
     for i, f in enumerate(sorted_files, 1):
-        rs    = f.get("risk_score", 0)
+        rs    = f.get("risk_score", 0) or 0
         gr    = f.get("risk_grade", "–")
         cm    = f.get("complexity_max", 0)
         ar    = f.get("annotation_rate")
@@ -186,8 +186,8 @@ def generate_html_report(result: dict) -> str:
         _kpi("Risk Score",     f"{risk_score:.1f}",
              grade_color, f"Grade {grade}"),
         _kpi("Total Files",    s.get("total_files", 0),   "#2563eb"),
-        _kpi("Total LOC",      f"{s.get('total_loc', 0):,}",  "#2563eb"),
-        _kpi("Total SLOC",     f"{s.get('total_sloc', 0):,}", "#64748b"),
+        _kpi("Total LOC",      f"{s.get('total_loc', 0) or 0:,}",  "#2563eb"),
+        _kpi("Total SLOC",     f"{s.get('total_sloc', 0) or 0:,}", "#64748b"),
         _kpi("Functions",      s.get("total_functions", 0),   "#7c3aed"),
         _kpi("Avg CC",         s.get("avg_complexity", 0),
              "#dc2626" if (s.get("avg_complexity") or 0) > 10 else "#16a34a"),
@@ -201,7 +201,7 @@ def generate_html_report(result: dict) -> str:
              _annot_color(annot_cov)),
         _kpi("Cycles",         s.get("cycle_count", 0),
              "#dc2626" if s.get("cycle_count") else "#16a34a"),
-        _kpi("Elapsed",        f"{s.get('elapsed_seconds', 0):.2f}s", "#64748b"),
+        _kpi("Elapsed",        f"{s.get('elapsed_seconds', 0) or 0:.2f}s", "#64748b"),
     ])
 
     # ── collect unannotated functions from all files ────────────────────────

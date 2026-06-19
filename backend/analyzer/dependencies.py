@@ -66,6 +66,11 @@ def _resolve_relative(
         resolved = ".".join(base_parts + [module]) if base_parts else module
         return [resolved]
     # ``from . import foo, bar`` — treat each name as a sibling sub-module.
+    # ``from . import *`` has no resolvable target name ("*" isn't a real
+    # sub-module), so it's dropped rather than turned into a "pkg.*" node.
+    names = [n for n in names if n != "*"]
+    if not names:
+        return []
     if base_parts:
         return [".".join(base_parts + [n]) for n in names]
     return list(names)

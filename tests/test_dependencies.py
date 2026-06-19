@@ -60,6 +60,12 @@ class TestParseImports:
         assert "pkg.foo" in result
         assert "pkg.bar" in result
 
+    def test_relative_star_import_no_pseudo_node(self):
+        # from . import *  has no resolvable target name; it must not turn
+        # into a bogus "pkg.*" module node.
+        result = parse_imports("from . import *", module_id="pkg.module")
+        assert result == []
+
     def test_syntax_error_returns_empty(self):
         assert parse_imports("def foo(: ...") == []
 

@@ -56,12 +56,19 @@ class _FuncExtractor(ast.NodeVisitor):
     def __init__(self, rel_path: str) -> None:
         self._path   = rel_path
         self._prefix: list[str] = []
+        # Mirrors _prefix 1:1, marking whether each pushed scope is a class
+        # or a function, so methods can be told apart from same-named
+        # module-level functions/closures based on actual nesting rather
+        # than guessing from the first parameter's name.
+        self._scope_kinds: list[str] = []
         self.functions: list[FunctionDetail] = []
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self._prefix.append(node.name)
+        self._scope_kinds.append("class")
         self.generic_visit(node)
         self._prefix.pop()
+        self._scope_kinds.pop()
 
     def _visit_func(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         from .complexity import _compute_cc  # avoid circular at module level
@@ -80,13 +87,22 @@ class _FuncExtractor(ast.NodeVisitor):
             + (1 if node.args.kwarg   else 0)
         )
 
-        # Annotation coverage: exclude self/cls from typeable targets
+        # Annotation coverage: exclude self/cls from typeable targets.
+        # Determined by actual class nesting, not by guessing from the
+        # first parameter's name, so a module-level `def self(x): ...`
+        # isn't mistaken for a method, and a static method (whose first
+        # param isn't self/cls) isn't stripped.
+        is_method = bool(self._scope_kinds) and self._scope_kinds[-1] == "class"
+        is_static = any(
+            isinstance(d, ast.Name) and d.id == "staticmethod"
+            for d in node.decorator_list
+        )
         all_args = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
         if node.args.vararg:
             all_args = all_args + [node.args.vararg]
         if node.args.kwarg:
             all_args = all_args + [node.args.kwarg]
-        typeable   = all_args[1:] if all_args and all_args[0].arg in ("self", "cls") else all_args
+        typeable   = all_args[1:] if (is_method and not is_static and all_args) else all_args
         n_typeable = len(typeable)
         annotated  = sum(1 for a in typeable if a.annotation is not None)
         has_return = node.returns is not None
@@ -109,8 +125,10 @@ class _FuncExtractor(ast.NodeVisitor):
             body_hash            = body_hash,
         ))
         self._prefix.append(node.name)
+        self._scope_kinds.append("func")
         self.generic_visit(node)
         self._prefix.pop()
+        self._scope_kinds.pop()
 
     visit_FunctionDef      = _visit_func
     visit_AsyncFunctionDef = _visit_func

@@ -216,6 +216,11 @@ class TestModuleTableRows:
         html  = _module_table_rows(files)
         assert "<td" in html  # basic sanity
 
+    def test_none_risk_score_does_not_crash(self):
+        # risk_score key present but None shouldn't blow up the ":.1f" format
+        html = _module_table_rows([_make_file(risk_score=None)])
+        assert "0.0" in html
+
 
 class TestDupTableRows:
     def test_basic_dup_row(self):
@@ -289,6 +294,16 @@ class TestGenerateHtmlReport:
         assert "Risk Score"  in html
         assert "Total Files" in html
         assert "Avg CC"      in html
+
+    def test_none_summary_values_do_not_crash(self):
+        # total_loc/total_sloc/elapsed_seconds present but None shouldn't
+        # blow up the ":,"/":.2f" formats in the KPI cards.
+        result = _minimal_result()
+        result["summary"]["total_loc"]       = None
+        result["summary"]["total_sloc"]      = None
+        result["summary"]["elapsed_seconds"] = None
+        html = generate_html_report(result)
+        assert "0.00s" in html
 
     def test_grade_badge_rendered(self):
         html = generate_html_report(_minimal_result())
