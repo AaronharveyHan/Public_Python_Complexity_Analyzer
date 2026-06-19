@@ -104,9 +104,9 @@ def _func_table_rows(funcs: list[dict]) -> str:
 
 
 def _module_table_rows(files: list[dict]) -> str:
-    sorted_files = sorted(files, key=lambda f: f.get("risk_score", 0), reverse=True)
+    """Render rows in the order given by *files* — sorting/capping is the caller's job."""
     rows = []
-    for i, f in enumerate(sorted_files, 1):
+    for i, f in enumerate(files, 1):
         rs    = f.get("risk_score", 0) or 0
         gr    = f.get("risk_grade", "–")
         cm    = f.get("complexity_max", 0)
@@ -162,7 +162,15 @@ def _long_table_rows(funcs: list[dict]) -> str:
 
 # ── main entry point ──────────────────────────────────────────────────────────
 
-def generate_html_report(result: dict) -> str:
+def generate_html_report(result: dict, max_modules: int = 200) -> str:
+    """Render a self-contained HTML report for *result*.
+
+    max_modules caps how many rows/treemap-nodes the module table and risk
+    treemap render (sorted by risk, highest first) — large monorepos can have
+    thousands of files, and rendering them all bloats the report and the
+    in-browser ECharts treemap. Other per-project aggregates (KPIs, CC
+    distribution) still cover every file regardless of this cap.
+    """
     s            = result.get("summary", {})
     files        = result.get("files", [])
     top_funcs    = result.get("top_complex_functions", [])
@@ -211,19 +219,34 @@ def generate_html_report(result: dict) -> str:
     ]
     _all_fns.sort(key=lambda f: f.get("n_params", 0), reverse=True)
 
+    # ── module table / treemap: shared sort + cap ───────────────────────────
+    _sorted_files = sorted(files, key=lambda f: f.get("risk_score", 0) or 0, reverse=True)
+    _mod_shown    = _sorted_files[:max_modules]
+    _mod_note     = (
+        f'<div class="truncation-note">Showing first {max_modules} of {len(_sorted_files)} modules (by risk)</div>'
+        if len(_sorted_files) > max_modules else ""
+    )
+
     # ── optional sections ───────────────────────────────────────────────────
     cycles_section = ""
     if cycles:
+        _CYCLE_LIMIT  = 30
+        _cycles_shown = cycles[:_CYCLE_LIMIT]
+        _cycle_note   = (
+            f'<div class="truncation-note">Showing first {_CYCLE_LIMIT} of {len(cycles)} cycles</div>'
+            if len(cycles) > _CYCLE_LIMIT else ""
+        )
         items = "".join(
             f'<div class="cycle-row">'
             f'{"&nbsp;→&nbsp;".join(_esc(n) for n in c)}'
             f"&nbsp;→&nbsp;{_esc(c[0])}</div>"
-            for c in cycles
+            for c in _cycles_shown
         )
         cycles_section = f"""
         <div class="section">
           <div class="section-title warn">⚠ Circular Dependencies ({len(cycles)})</div>
           {items}
+          {_cycle_note}
         </div>"""
 
     dup_section = ""
@@ -298,13 +321,19 @@ def generate_html_report(result: dict) -> str:
 
     failed_section = ""
     if failed_files:
+        _FAILED_LIMIT  = 30
+        _failed_shown  = failed_files[:_FAILED_LIMIT]
+        _failed_note   = (
+            f'<div class="truncation-note">Showing first {_FAILED_LIMIT} of {len(failed_files)} skipped files</div>'
+            if len(failed_files) > _FAILED_LIMIT else ""
+        )
         rows = "".join(
             f'<tr>'
             f'<td class="mono sm">{_esc(f.get("path",""))}</td>'
             f'<td style="color:#dc2626;font-size:11px">{_esc(f.get("reason",""))}</td>'
             f'<td class="sm">{_esc(f.get("detail",""))}</td>'
             f'</tr>'
-            for f in failed_files
+            for f in _failed_shown
         )
         failed_section = f"""
         <div class="section" style="border-color:#fca5a5">
@@ -313,23 +342,33 @@ def generate_html_report(result: dict) -> str:
             <thead><tr><th>File</th><th>Reason</th><th>Detail</th></tr></thead>
             <tbody>{rows}</tbody>
           </table></div>
+          {_failed_note}
         </div>"""
 
     # ── chart data (safe JSON embed) ────────────────────────────────────────
+    cc_bins = {"1": 0, "2-3": 0, "4-6": 0, "7-10": 0, "11+": 0}
+    for fi in files:
+        for fn in fi.get("functions", []):
+            cc = fn.get("complexity", 0) or 0
+            if cc <= 1:
+                cc_bins["1"] += 1
+            elif cc <= 3:
+                cc_bins["2-3"] += 1
+            elif cc <= 6:
+                cc_bins["4-6"] += 1
+            elif cc <= 10:
+                cc_bins["7-10"] += 1
+            else:
+                cc_bins["11+"] += 1
+
     chart_data = json.dumps({
         "files": [
             {"name": f.get("relative_path", ""),
              "value": f.get("loc", 0),
              "risk": f.get("risk_score", 0)}
-            for f in files
+            for f in _mod_shown
         ],
-        "ccBins": {
-            "1":    sum(1 for fi in files for fn in fi.get("functions", []) if fn.get("complexity", 0) <= 1),
-            "2-3":  sum(1 for fi in files for fn in fi.get("functions", []) if 2 <= fn.get("complexity", 0) <= 3),
-            "4-6":  sum(1 for fi in files for fn in fi.get("functions", []) if 4 <= fn.get("complexity", 0) <= 6),
-            "7-10": sum(1 for fi in files for fn in fi.get("functions", []) if 7 <= fn.get("complexity", 0) <= 10),
-            "11+":  sum(1 for fi in files for fn in fi.get("functions", []) if fn.get("complexity", 0) > 10),
-        },
+        "ccBins": cc_bins,
     }, default=str).replace("</", "<\\/")
 
     # ── assemble HTML ───────────────────────────────────────────────────────
@@ -472,8 +511,9 @@ def generate_html_report(result: dict) -> str:
         <th>#</th><th>Module</th><th>LOC</th><th>SLOC</th><th>Fns</th>
         <th>Avg CC</th><th>Max CC</th><th>Risk</th><th>Grade</th><th>Annot.</th>
       </tr></thead>
-      <tbody>{_module_table_rows(files)}</tbody>
+      <tbody>{_module_table_rows(_mod_shown)}</tbody>
     </table></div>
+    {_mod_note}
   </div>
 
   {cycles_section}

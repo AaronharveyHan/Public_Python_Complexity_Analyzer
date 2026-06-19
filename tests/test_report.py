@@ -194,11 +194,13 @@ class TestFuncTableRows:
 
 
 class TestModuleTableRows:
-    def test_sorted_by_risk_descending(self):
+    def test_renders_in_given_order(self):
+        # Sorting/capping is the caller's job (generate_html_report) — this
+        # function just renders whatever order it's handed.
         files = [
-            _make_file(relative_path="low.py",  risk_score=10.0),
             _make_file(relative_path="high.py", risk_score=90.0),
             _make_file(relative_path="med.py",  risk_score=50.0),
+            _make_file(relative_path="low.py",  risk_score=10.0),
         ]
         html = _module_table_rows(files)
         assert html.index("high.py") < html.index("med.py") < html.index("low.py")
@@ -432,6 +434,55 @@ class TestGenerateHtmlReport:
     def test_no_types_badge_in_func_row(self):
         html = _func_table_rows([_make_func(annotation_coverage=0)])
         assert "No Types" in html
+
+    def test_module_table_sorted_by_risk_descending(self):
+        result = _minimal_result(files=[
+            _make_file(relative_path="low.py",  risk_score=10.0),
+            _make_file(relative_path="high.py", risk_score=90.0),
+            _make_file(relative_path="med.py",  risk_score=50.0),
+        ])
+        html = generate_html_report(result)
+        assert html.index("high.py") < html.index("med.py") < html.index("low.py")
+
+    def test_module_table_truncated_to_max_modules(self):
+        files = [_make_file(relative_path=f"f{i}.py", risk_score=float(i)) for i in range(5)]
+        result = _minimal_result(files=files)
+        html = generate_html_report(result, max_modules=2)
+        assert "Showing first 2 of 5 modules" in html
+        # Only the two highest-risk modules (f4, f3) should be rendered.
+        assert "f4.py" in html
+        assert "f0.py" not in html
+
+    def test_module_table_not_truncated_when_under_cap(self):
+        files = [_make_file(relative_path=f"f{i}.py") for i in range(3)]
+        result = _minimal_result(files=files)
+        html = generate_html_report(result, max_modules=200)
+        assert "Showing first" not in html
+
+    def test_cycles_truncated_when_over_limit(self):
+        cycles = [[f"mod_{i}", f"mod_{i}_b"] for i in range(35)]
+        result = _minimal_result()
+        result["dependency_graph"] = {"nodes": [], "edges": [], "cycles": cycles}
+        html = generate_html_report(result)
+        assert "Showing first 30 of 35 cycles" in html
+
+    def test_failed_files_truncated_when_over_limit(self):
+        failed = [{"path": f"f{i}.py", "reason": "syntax_error", "detail": ""} for i in range(35)]
+        result = _minimal_result(failed_files=failed)
+        html = generate_html_report(result)
+        assert "Showing first 30 of 35 skipped files" in html
+
+    def test_cc_bins_count_across_all_files_regardless_of_module_cap(self):
+        # ccBins is a whole-project aggregate — it must not be affected by
+        # max_modules truncation of the module table / treemap.
+        files = [
+            _make_file(relative_path=f"f{i}.py", risk_score=float(i),
+                       functions=[_make_func(complexity=11)])
+            for i in range(5)
+        ]
+        result = _minimal_result(files=files)
+        html = generate_html_report(result, max_modules=2)
+        assert '"11+": 5' in html
 
     def test_no_types_badge_absent_when_annotated(self):
         html = _func_table_rows([_make_func(annotation_coverage=1.0)])
